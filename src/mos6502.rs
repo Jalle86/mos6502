@@ -54,7 +54,7 @@ impl Flag {
         flag_reg[flag as usize] = val;
     }
 
-    fn get(flag_reg: &mut [bool], flag: Flag) -> bool {
+    fn get(flag_reg: &[bool], flag: Flag) -> bool {
         flag_reg[flag as usize]
     }
 }
@@ -71,6 +71,14 @@ impl Mos6502 {
 			sp: 0,
 			pc: 0,
 		}
+	}
+
+	fn get_flag(&self, flag: Flag) -> bool {
+		Flag::get(&self.flags, flag)
+	}
+
+	fn set_flag(&mut self, flag: Flag, v: bool) {
+		Flag::set(&mut self.flags, flag, v);
 	}
 
 	fn adc(&mut self, addr_mode: AddrMode) {
@@ -149,7 +157,16 @@ impl Mos6502 {
 		let val = self.y;
 		self.compare(addr_mode, val);
 	}
-	
+
+	fn bpl(&mut self, addr_mode: AddrMode) {
+		match addr_mode {
+			Relative(n) => if !self.get_flag(Flag::N) {
+				self.pc.overflowing_add(n as u16);
+			},
+			x => addr_mode_panic!("BPL", x),
+		};
+	}
+
 	fn dec(&mut self, addr_mode: AddrMode) {
 		let op = match addr_mode {
 			ZeroPage(n) | ZeroPageX(n) =>
