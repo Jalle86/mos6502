@@ -5,7 +5,7 @@ macro_rules! addr_mode_panic {
 	(panic!(format!("{} invalid addressing mode: {:?}", $instr, $addr_mode)));
 }
 
-type flag_array = [bool; 7];
+type FlagArray = [bool; 7];
 
 #[allow(dead_code)]
 struct Mos6502 {
@@ -13,7 +13,7 @@ struct Mos6502 {
     acc     : u8,
     x       : u8,
     y       : u8,
-    flags   : flag_array,
+    flags   : FlagArray,
     sp      : u8,
     pc      : u16,
 }
@@ -41,27 +41,27 @@ enum AddrMode
 
 #[allow(dead_code)]
 enum Flag {
-    C = 0,
-    Z = 1,
-    I = 2,
-    D = 3,
-    B = 4,
-    V = 5,
-    N = 6,
+    C = 0, //carry
+    Z = 1, //zero
+    I = 2, //interrupt disable
+    D = 3, //decimal mode
+    B = 4, //break
+    V = 5, //overflow
+    N = 6, //negative
 }
 
 #[allow(dead_code)]
 impl Flag {
-    fn set(flag_reg: &mut flag_array, flag: Flag, val : bool) {
+    fn set(flag_reg: &mut FlagArray, flag: Flag, val : bool) {
         flag_reg[flag as usize] = val;
     }
 
-    fn get(flag_reg: &flag_array, flag: Flag) -> bool {
+    fn get(flag_reg: &FlagArray, flag: Flag) -> bool {
         flag_reg[flag as usize]
     }
 
-    fn to_flag_array(flag_bits: u8) -> flag_array {
-    	let mut flag_reg: flag_array = [true; 7];
+    fn to_flag_array(flag_bits: u8) -> FlagArray {
+    	let mut flag_reg: FlagArray = [true; 7];
     	Flag::set(&mut flag_reg, Flag::C, flag_bits & 0x01 != 0);
     	Flag::set(&mut flag_reg, Flag::Z, flag_bits & 0x02 != 0);
     	Flag::set(&mut flag_reg, Flag::I, flag_bits & 0x04 != 0);
@@ -73,8 +73,8 @@ impl Flag {
     	flag_reg
     }
 
-    fn from_flag_array(flag_reg: flag_array) -> u8 {
-    	let mut byte = 0;
+    fn from_flag_array(flag_reg: FlagArray) -> u8 {
+    	let mut byte = 1 << 5;
     	byte |= (Flag::get(&flag_reg, Flag::C) as u8) << 0;
     	byte |= (Flag::get(&flag_reg, Flag::Z) as u8) << 1;
     	byte |= (Flag::get(&flag_reg, Flag::I) as u8) << 2;
@@ -84,6 +84,16 @@ impl Flag {
     	byte |= (Flag::get(&flag_reg, Flag::N) as u8) << 7;
     	byte
     }
+}
+
+#[allow(dead_code)]
+fn is_negative(n: u8) -> bool {
+	n & 0x80 != 0
+}
+
+#[allow(dead_code)]
+fn is_overflowing(n: u8, m: u8) -> bool {
+	is_negative(n) ^ is_negative(m)
 }
 
 #[allow(dead_code)]
@@ -112,28 +122,21 @@ impl Mos6502 {
 		Flag::to_flag_array(flags)
 	}
 
-	fn cycle(&mut self) {
+	fn step(&mut self) {
 		let pc = self.pc;
 		let addr_mode = self.get_addr_mode(pc);
-		match addr_mode {
-			AbsoluteX(n) | AbsoluteY(n) | IndirectY(n)
-			=> (),
-			_ => (),
-
-		};
 		let instr = self.get_instruction(pc);
+		self.pc += self.get_instr_len(pc);
 
 		instr(self, addr_mode);
 	}
 
 	fn get_instruction(&self, opcode: u16) -> fn(&mut Mos6502, AddrMode) {
 		match opcode {
-			0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 |
-			0x61 | 0x71
+			0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71
 			=> Mos6502::adc,
 
-			0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 |
-			0x21 | 0x31
+			0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31
 			=> Mos6502::and,
 
 			0x0A | 0x06 | 0x16 | 0x0E | 0x1E
@@ -152,8 +155,7 @@ impl Mos6502 {
 			0xD0 => Mos6502::bne,
 			0xF0 => Mos6502::beq,
 
-			0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 |
-			0xC1 | 0xD1
+			0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1
 			=> Mos6502::cmp,
 
 			0xE0 | 0xE4 | 0xEC
@@ -165,15 +167,14 @@ impl Mos6502 {
 			0xC6 | 0xD6 | 0xCE | 0xDE
 			=> Mos6502::dec,
 
-			0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 |
-			0x41 | 0x51
+			0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51
 			=> Mos6502::eor,
 
 			0x18 => Mos6502::clc,
 			0x38 => Mos6502::sec,
 			0x58 => Mos6502::cli,
 			0x78 => Mos6502::sei,
-			0x88 => Mos6502::clv,
+			0xB8 => Mos6502::clv,
 			//0xD8 => Mos6502::cld,
 			//0xF8 => Mos6502::sed,
 
@@ -185,8 +186,7 @@ impl Mos6502 {
 
 			0x20 => Mos6502::jsr,
 
-			0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0x89 |
-			0xA1 | 0xB1
+			0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0x89 | 0xA1 | 0xB1
 			=> Mos6502::lda,
 
 			0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE
@@ -200,8 +200,7 @@ impl Mos6502 {
 
 			0xEA => Mos6502::nop,
 
-			0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 |
-			0x01 | 0x11
+			0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11
 			=> Mos6502::ora,
 
 			0xAA => Mos6502::tax,
@@ -222,12 +221,10 @@ impl Mos6502 {
 			0x40 => Mos6502::rti,
 			0x60 => Mos6502::rts,
 
-			0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 |
-			0xE1 | 0xF1
+			0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1
 			=> Mos6502::sbc,
 
-			0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 |
-			0x91
+			0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91
 			=> Mos6502::sta,
 
 			0x9A => Mos6502::txs,
@@ -279,7 +276,7 @@ impl Mos6502 {
 			=> zero_page(),
 
 			0x75 | 0x35 | 0x16 | 0xD5 | 0xD6 | 0x55 |
-			0xF6 | 0x85 | 0xB4 | 0x56 | 0x15 | 0x36 |
+			0xF6 | 0xB5 | 0xB4 | 0x56 | 0x15 | 0x36 |
 			0x76 | 0xF5 | 0x95 | 0x94
 			=> zero_page_x(),
 
@@ -293,7 +290,7 @@ impl Mos6502 {
 			=> absolute(),
 
 			0x7D | 0x3D | 0x1E | 0xDD | 0xDE | 0x5D |
-			0xFE | 0x8D | 0xBC | 0x5E | 0x1D | 0x3E |
+			0xFE | 0xBD | 0xBC | 0x5E | 0x1D | 0x3E |
 			0x7E | 0xFD | 0x9D
 			=> absolute_x(),
 
@@ -331,6 +328,35 @@ impl Mos6502 {
 
 	}
 
+	fn get_instr_len(&mut self, opcode: u8) -> u16 {
+		match opcode {
+			0x0A | 0x00 | 0x4A | 0x2A | 0x6A | 0x40 |
+			0x60 => 1,
+
+			0x69 | 0x65 | 0x75 | 0x61 | 0x71 | 0x29 |
+			0x25 | 0x35 | 0x21 | 0x31 | 0x06 | 0x16 |
+			0x24 | 0xC9 | 0xC5 | 0xD5 | 0xC1 | 0xD1 |
+			0xC0 | 0xC4 | 0xC6 | 0xD6 | 0x49 | 0x45 |
+			0x55 | 0x41 | 0x51 | 0xA9 | 0xA5 | 0xA1 |
+			0xB1 | 0xA2 | 0xA6 | 0xB6 | 0xA0 | 0xA4 |
+			0xB4 | 0x46 | 0x56 | 0x09 | 0x05 | 0x15 |
+			0x01 | 0x11 | 0x26 | 0x36 | 0x66 | 0x76 |
+			0x85 | 0x95 | 0x81 | 0x91 | 0x9A | 0xBA |
+			0x86 | 0x96 | 0x84 | 0x94 => 2,
+
+			0x6D | 0x7D | 0x79 | 0x2D | 0x3D | 0x39 |
+			0x2C | 0xCD | 0xDD | 0xD9 | 0xCC | 0x4D |
+			0x5D | 0x59 | 0x4C | 0x6C | 0x20 | 0xAD |
+			0xBD | 0xB9 | 0xAC | 0xBC | 0x0D | 0x1D |
+			0x19 | 0x8D | 0x9D | 0x99 | 0x48 | 0x08 |
+			0x8C => 3,
+
+			0x68 | 0x28 => 4,
+
+			x => panic!(format!("Invalid opcode in instr_len: {}", opcode)),
+		}
+	}
+
 	fn adc(&mut self, addr_mode: AddrMode) {
 		let op = match addr_mode {
 			Immediate(n) => n,
@@ -342,12 +368,13 @@ impl Mos6502 {
 		};
 
 		let (acc, carry) = self.acc.overflowing_add(op);
-		self.acc = acc;
 
-		Flag::set(&mut self.flags, Flag::N, self.acc & 0x80 != 0);
-		Flag::set(&mut self.flags, Flag::Z, self.acc == 0);
+		Flag::set(&mut self.flags, Flag::N, is_negative(acc));
+		Flag::set(&mut self.flags, Flag::V, is_overflowing(acc, self.acc));
+		Flag::set(&mut self.flags, Flag::Z, acc == 0);
 		Flag::set(&mut self.flags, Flag::C, carry);
-		
+
+		self.acc = acc;
 	}
 
 	fn and(&mut self, addr_mode: AddrMode) {
@@ -360,6 +387,9 @@ impl Mos6502 {
 			x => addr_mode_panic!("AND", x),
 		};
 
+		Flag::set(&mut self.flags, Flag::Z, self.acc == 0);
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.acc));
+
 		self.acc &= op;
 	}
 
@@ -371,7 +401,10 @@ impl Mos6502 {
 			x => addr_mode_panic!("ASL", x),
 		};
 
-		*op << 1;
+		let val = *op << 1;
+		Flag::set(&mut self.flags, Flag::N, is_negative(val));
+		Flag::set(&mut self.flags, Flag::Z, val == 0);
+		Flag::set(&mut self.flags, Flag::C, *op & 0x80 != 0);
 	}
 
 	fn bit(&mut self, addr_mode: AddrMode) {
@@ -382,6 +415,8 @@ impl Mos6502 {
 		};
 
 		let result = self.acc & op;
+		Flag::set(&mut self.flags, Flag::N, is_negative(op));
+		Flag::set(&mut self.flags, Flag::V, is_overflowing(op, result));
 		Flag::set(&mut self.flags, Flag::Z, result == 0);
 	}
 
@@ -439,6 +474,10 @@ impl Mos6502 {
 	}
 
 	fn brk(&mut self, addr_mode: AddrMode) {
+		if let Implied = addr_mode {
+			self.set_flag(Flag::B, true);
+			//TODO: Find out how to implement
+		}
 
 	}
 
@@ -454,7 +493,7 @@ impl Mos6502 {
 
 		Flag::set(&mut self.flags, Flag::C, val > op);
 		Flag::set(&mut self.flags, Flag::Z, val == op);
-		// TODO: S Flag
+		Flag::set(&mut self.flags, Flag::N, is_negative(val));
 	}
 
 	fn cmp(&mut self, addr_mode: AddrMode) {
@@ -482,6 +521,8 @@ impl Mos6502 {
 		};
 
 		*op = op.overflowing_sub(1).0;
+		Flag::set(&mut self.flags, Flag::N, is_negative(*op));
+		Flag::set(&mut self.flags, Flag::Z, *op == 0);
 	}
 
 	fn eor(&mut self, addr_mode: AddrMode) {
@@ -495,6 +536,8 @@ impl Mos6502 {
 		};
 
 		self.acc ^= op;
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.acc));
+		Flag::set(&mut self.flags, Flag::Z, self.acc == 0);
 	}
 
 	fn flag_instr(&mut self, addr_mode: AddrMode, flag: Flag, v: bool, op: &str) {
@@ -534,11 +577,19 @@ impl Mos6502 {
 		};
 
 		*op = op.overflowing_add(1).0;
+		Flag::set(&mut self.flags, Flag::N, is_negative(*op));
+		Flag::set(&mut self.flags, Flag::Z, *op == 0);
+	}
+
+	fn jmp_addr(&self, addr: u16) -> u16 {
+		let high = self.mem[(addr as u8).wrapping_add(1) as usize];
+		self.mem[addr as usize] as u16 + (high as u16) << 4
 	}
 
 	fn jmp(&mut self, addr_mode: AddrMode) {
-		match addr_mode {
-			Absolute(n) | Indirect(n) => self.pc = n,
+		self.pc = match addr_mode {
+			Absolute(n) => n,
+			Indirect(n) => self.jmp_addr(n),
 			x => addr_mode_panic!("JMP", x),
 		}
 	}
@@ -563,6 +614,9 @@ impl Mos6502 {
 		};
 
 		self.acc = op;
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.acc));
+		Flag::set(&mut self.flags, Flag::Z, self.acc == 0);
 	}
 
 	fn ldx(&mut self, addr_mode: AddrMode) {
@@ -576,6 +630,9 @@ impl Mos6502 {
 		};
 
 		self.x = op;
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.x));
+		Flag::set(&mut self.flags, Flag::Z, self.x == 0);
 	}
 
 	fn ldy(&mut self, addr_mode: AddrMode) {
@@ -589,6 +646,8 @@ impl Mos6502 {
 		};
 
 		self.y = op;
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.y));
+		Flag::set(&mut self.flags, Flag::Z, self.y == 0);
 	}
 
 	fn lsr(&mut self, addr_mode: AddrMode) {
@@ -599,7 +658,10 @@ impl Mos6502 {
 			x => addr_mode_panic!("LSR", x),
 		};
 
-		*op >>= 1;
+		let val = *op >> 1;
+		Flag::set(&mut self.flags, Flag::N, is_negative(val));
+		Flag::set(&mut self.flags, Flag::Z, val == 0);
+		Flag::set(&mut self.flags, Flag::C, *op & 0x01 != 0);
 	}
 
 	fn nop(&mut self, addr_mode: AddrMode) {
@@ -620,6 +682,8 @@ impl Mos6502 {
 		};
 
 		self.acc |= op;
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.acc));
+		Flag::set(&mut self.flags, Flag::Z, self.acc == 0);
 	}
 
 	fn dex(&mut self, addr_mode: AddrMode) {
@@ -627,6 +691,9 @@ impl Mos6502 {
 			Implied => self.x = self.x.overflowing_sub(1).0,
 			x => addr_mode_panic!("DEX", x),
 		}
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.x));
+		Flag::set(&mut self.flags, Flag::Z, self.x == 0);
 	}
 
 	fn inx(&mut self, addr_mode: AddrMode) {
@@ -634,6 +701,9 @@ impl Mos6502 {
 			Implied => self.x = self.x.overflowing_add(1).0,
 			x => addr_mode_panic!("INX", x),
 		}
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.x));
+		Flag::set(&mut self.flags, Flag::Z, self.x == 0);
 	}
 
 	fn dey(&mut self, addr_mode: AddrMode) {
@@ -641,6 +711,9 @@ impl Mos6502 {
 			Implied => self.y = self.y.overflowing_sub(1).0,
 			x => addr_mode_panic!("DEY", x),
 		}
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.y));
+		Flag::set(&mut self.flags, Flag::Z, self.y == 0);
 	}
 
 	fn iny(&mut self, addr_mode: AddrMode) {
@@ -648,6 +721,9 @@ impl Mos6502 {
 			Implied => self.y = self.y.overflowing_add(1).0,
 			x => addr_mode_panic!("INY", x),
 		}
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.y));
+		Flag::set(&mut self.flags, Flag::Z, self.y == 0);
 	}
 
 	fn tax(&mut self, addr_mode: AddrMode) {
@@ -655,6 +731,9 @@ impl Mos6502 {
 			Implied => self.x = self.acc,
 			x => addr_mode_panic!("TAX", x),
 		}
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.x));
+		Flag::set(&mut self.flags, Flag::Z, self.x == 0);
 	}
 
 	fn txa(&mut self, addr_mode: AddrMode) {
@@ -662,6 +741,9 @@ impl Mos6502 {
 			Implied => self.acc = self.x,
 			x => addr_mode_panic!("TXA", x),
 		}
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.acc));
+		Flag::set(&mut self.flags, Flag::Z, self.acc == 0);
 	}
 
 	fn tay(&mut self, addr_mode: AddrMode) {
@@ -669,6 +751,9 @@ impl Mos6502 {
 			Implied => self.y = self.acc,
 			x => addr_mode_panic!("TAY", x),
 		}
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.y));
+		Flag::set(&mut self.flags, Flag::Z, self.y == 0);
 	}
 
 	fn tya(&mut self, addr_mode: AddrMode) {
@@ -676,6 +761,9 @@ impl Mos6502 {
 			Implied => self.acc = self.y,
 			x => addr_mode_panic!("TYA", x),
 		}
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(self.acc));
+		Flag::set(&mut self.flags, Flag::Z, self.acc == 0);
 	}
 
 	fn rol(&mut self, addr_mode: AddrMode) {
@@ -686,22 +774,28 @@ impl Mos6502 {
 			Absolute(n) | AbsoluteX(n) => &mut self.mem[n as usize],
 			x => addr_mode_panic!("ROL", x),
 		};
+		let op_old = *op;
+		*op = (*op << 1) | carry;
 
-		*op <<= 1;
-		*op |= carry;
+		Flag::set(&mut self.flags, Flag::N, is_negative(*op));
+		Flag::set(&mut self.flags, Flag::Z, *op == 0);
+		Flag::set(&mut self.flags, Flag::C, op_old & 0x80 != 0);
 	}
 
 	fn ror(&mut self, addr_mode: AddrMode) {
-		let carry = self.get_flag(Flag::C) as u8;
+		let carry = (self.get_flag(Flag::C) as u8) << 7;
 		let op = match addr_mode {
 			Accumulator => &mut self.acc,
 			ZeroPage(n) | ZeroPageX(n) => &mut self.mem[n as usize],
 			Absolute(n) | AbsoluteX(n) => &mut self.mem[n as usize],
-			x => addr_mode_panic!("ROR", x),
+			x => addr_mode_panic!("ROL", x),
 		};
+		let op_old = *op;
+		*op = (*op >> 1) | carry;
 
-		*op >>= 1;
-		*op |= carry;
+		Flag::set(&mut self.flags, Flag::N, is_negative(*op));
+		Flag::set(&mut self.flags, Flag::Z, *op == 0);
+		Flag::set(&mut self.flags, Flag::C, op_old & 0x01 != 0);
 	}
 
 	fn rti(&mut self, addr_mode: AddrMode) {
@@ -731,10 +825,17 @@ impl Mos6502 {
 				self.mem[n as usize],
 			Absolute(n) | AbsoluteX(n) | AbsoluteY(n) | Indirect(n) =>
 				self.mem[n as usize],
-			x => addr_mode_panic!("ADC", x),
+			x => addr_mode_panic!("SBC", x),
 		};
 
-		self.acc = self.acc.overflowing_sub(op).0;
+		let (acc, carry) = self.acc.overflowing_sub(op);
+
+		Flag::set(&mut self.flags, Flag::N, is_negative(acc));
+		Flag::set(&mut self.flags, Flag::V, is_overflowing(acc, self.acc));
+		Flag::set(&mut self.flags, Flag::Z, acc == 0);
+		Flag::set(&mut self.flags, Flag::C, carry);
+
+		self.acc = acc;
 	}
 
 	fn sta(&mut self, addr_mode: AddrMode) {
@@ -802,7 +903,7 @@ impl Mos6502 {
 	fn plp(&mut self, addr_mode: AddrMode) {
 		match addr_mode {
 			Implied => {
-				let flags = Flag::to_flag_array(self.pop());
+				self.flags = Flag::to_flag_array(self.pop());
 			},
 			x => addr_mode_panic!("PLP", x),
 		}
@@ -855,11 +956,36 @@ fn test_adc_overflow() {
 }
 
 #[test]
+fn test_adc_flags() {
+	let mut m = Mos6502::new();
+
+	m.acc = 100;
+	m.adc(Immediate(156));
+	assert_eq!(m.get_flag(Flag::Z), true);
+	assert_eq!(m.get_flag(Flag::C), true);
+
+	m = Mos6502::new();
+	m.acc = 0x7F;
+	m.adc(Immediate(0x10));
+	assert_eq!(m.get_flag(Flag::N), true);
+	assert_eq!(m.get_flag(Flag::V), true);	
+}
+
+#[test]
 fn test_and() {
 	let mut m = Mos6502::new();
 	m.acc = 0xC3;
 	m.and(Immediate(0x12));
 	assert_eq!(m.acc, 0x02);
+}
+
+#[test]
+fn test_and_flags() {
+	let mut m = Mos6502::new();
+	m.acc = 0xF3;
+	m.and(Immediate(0x92));
+	assert_eq!(m.get_flag(Flag::N), true);
+	assert_eq!(m.get_flag(Flag::Z), false);
 }
 
 #[test]

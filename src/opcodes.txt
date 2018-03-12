@@ -1,0 +1,540 @@
+ADC (ADd with Carry)
+
+Affects Flags: S V Z C
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     ADC #0x44      0x69  2   2
+Zero Page     ADC 0x44       0x65  2   3
+Zero Page,X   ADC 0x44,X     0x75  2   4
+Absolute      ADC 0x4400     0x6D  3   4
+Absolute,X    ADC 0x4400,X   0x7D  3   4+
+Absolute,Y    ADC 0x4400,Y   0x79  3   4+
+Indirect,X    ADC (0x44,X)   0x61  2   6
+Indirect,Y    ADC (0x44),Y   0x71  2   5+
+
++ add 1 cycle if page boundary crossed
+
+ADC results are dependant on the setting of the decimal flag. In decimal mode, addition is carried out on the assumption that the values involved are packed BCD (Binary Coded Decimal).
+
+There is no way to add without carry.
+
+ 
+AND (bitwise AND with accumulator)
+
+Affects Flags: S Z
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     AND #0x44      0x29  2   2
+Zero Page     AND 0x44       0x25  2   3
+Zero Page,X   AND 0x44,X     0x35  2   4
+Absolute      AND 0x4400     0x2D  3   4
+Absolute,X    AND 0x4400,X   0x3D  3   4+
+Absolute,Y    AND 0x4400,Y   0x39  3   4+
+Indirect,X    AND (0x44,X)   0x21  2   6
+Indirect,Y    AND (0x44),Y   0x31  2   5+
+
++ add 1 cycle if page boundary crossed
+
+ 
+ASL (Arithmetic Shift Left)
+
+Affects Flags: S Z C
+
+MODE           SYNTAX       HEX LEN TIM
+Accumulator   ASL A         0x0A  1   2
+Zero Page     ASL 0x44       0x06  2   5
+Zero Page,X   ASL 0x44,X     0x16  2   6
+Absolute      ASL 0x4400     0x0E  3   6
+Absolute,X    ASL 0x4400,X   0x1E  3   7
+
+ASL shifts all bits left one position. 0 is shifted into bit 0 and the original bit 7 is shifted into the Carry.
+
+ 
+BIT (test BITs)
+
+Affects Flags: N V Z
+
+MODE           SYNTAX       HEX LEN TIM
+Zero Page     BIT 0x44       0x24  2   3
+Absolute      BIT 0x4400     0x2C  3   4
+
+BIT sets the Z flag as though the value in the address tested were ANDed with the accumulator. The S and V flags are set to match bits 7 and 6 respectively in the value stored at the tested address.
+
+BIT is often used to skip one or two following bytes as in:
+
+CLOSE1 LDX #0x10   If entered here, we
+       .BYTE 0x2C  effectively perform
+CLOSE2 LDX #0x20   a BIT test on 0x20A2,
+       .BYTE 0x2C  another one on 0x30A2,
+CLOSE3 LDX #0x30   and end up with the X
+CLOSEX LDA #12    register still at 0x10
+       STA ICCOM,X upon arrival here.
+
+Beware: a BIT instruction used in this way as a NOP does have effects: the flags may be modified, and the read of the absolute address, if it happens to access an I/O device, may cause an unwanted action.
+
+                 
+Branch Instructions
+
+Affect Flags: none
+
+All branches are relative mode and have a length of two bytes. Syntax is "Bxx Displacement" or (better) "Bxx Label". See the notes on the Program Counter for more on displacements.
+
+Branches are dependant on the status of the flag bits when the op code is encountered. A branch not taken requires two machine cycles. Add one if the branch is taken and add one more if the branch crosses a page boundary.
+
+MNEMONIC                       HEX
+BPL (Branch on PLus)           0x10
+BMI (Branch on MInus)          0x30
+BVC (Branch on oVerflow Clear) 0x50
+BVS (Branch on oVerflow Set)   0x70
+BCC (Branch on Carry Clear)    0x90
+BCS (Branch on Carry Set)      0xB0
+BNE (Branch on Not Equal)      0xD0
+BEQ (Branch on EQual)          0xF0
+
+There is no BRA (BRanch Always) instruction but it can be easily emulated by branching on the basis of a known condition. One of the best flags to use for this purpose is the oVerflow which is unchanged by all but addition and subtraction operations.
+
+A page boundary crossing occurs when the branch destination is on a different page than the instruction AFTER the branch instruction. For example:
+
+  SEC
+  BCS LABEL
+  NOP
+
+A page boundary crossing occurs (i.e. the BCS takes 4 cycles) when (the address of) LABEL and the NOP are on different pages. This means that
+
+        CLV
+        BVC LABEL
+  LABEL NOP
+
+the BVC instruction will take 3 cycles no matter what address it is located at.
+
+ 
+BRK (BReaK)
+
+Affects Flags: B
+
+MODE           SYNTAX       HEX LEN TIM
+Implied       BRK           0x00  1   7
+
+BRK causes a non-maskable interrupt and increments the program counter by one. Therefore an RTI will go to the address of the BRK +2 so that BRK may be used to replace a two-byte instruction for debugging and the subsequent RTI will be correct.
+
+ 
+CMP (CoMPare accumulator)
+
+Affects Flags: S Z C
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     CMP #0x44      0xC9  2   2
+Zero Page     CMP 0x44       0xC5  2   3
+Zero Page,X   CMP 0x44,X     0xD5  2   4
+Absolute      CMP 0x4400     0xCD  3   4
+Absolute,X    CMP 0x4400,X   0xDD  3   4+
+Absolute,Y    CMP 0x4400,Y   0xD9  3   4+
+Indirect,X    CMP (0x44,X)   0xC1  2   6
+Indirect,Y    CMP (0x44),Y   0xD1  2   5+
+
++ add 1 cycle if page boundary crossed
+
+Compare sets flags as if a subtraction had been carried out. If the value in the accumulator is equal or greater than the compared value, the Carry will be set. The equal (Z) and sign (S) flags will be set based on equality or lack thereof and the sign (i.e. A>=0x80) of the accumulator.
+
+ 
+CPX (ComPare X register)
+
+Affects Flags: S Z C
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     CPX #0x44      0xE0  2   2
+Zero Page     CPX 0x44       0xE4  2   3
+Absolute      CPX 0x4400     0xEC  3   4
+
+Operation and flag results are identical to equivalent mode accumulator CMP ops.
+
+ 
+CPY (ComPare Y register)
+
+Affects Flags: S Z C
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     CPY #0x44      0xC0  2   2
+Zero Page     CPY 0x44       0xC4  2   3
+Absolute      CPY 0x4400     0xCC  3   4
+
+Operation and flag results are identical to equivalent mode accumulator CMP ops.
+
+ 
+DEC (DECrement memory)
+
+Affects Flags: S Z
+
+MODE           SYNTAX       HEX LEN TIM
+Zero Page     DEC 0x44       0xC6  2   5
+Zero Page,X   DEC 0x44,X     0xD6  2   6
+Absolute      DEC 0x4400     0xCE  3   6
+Absolute,X    DEC 0x4400,X   0xDE  3   7
+
+ 
+EOR (bitwise Exclusive OR)
+
+Affects Flags: S Z
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     EOR #0x44      0x49  2   2
+Zero Page     EOR 0x44       0x45  2   3
+Zero Page,X   EOR 0x44,X     0x55  2   4
+Absolute      EOR 0x4400     0x4D  3   4
+Absolute,X    EOR 0x4400,X   0x5D  3   4+
+Absolute,Y    EOR 0x4400,Y   0x59  3   4+
+Indirect,X    EOR (0x44,X)   0x41  2   6
+Indirect,Y    EOR (0x44),Y   0x51  2   5+
+
++ add 1 cycle if page boundary crossed
+
+             
+Flag (Processor Status) Instructions
+
+Affect Flags: as noted
+
+These instructions are implied mode, have a length of one byte and require two machine cycles.
+
+MNEMONIC                       HEX
+CLC (CLear Carry)              0x18
+SEC (SEt Carry)                0x38
+CLI (CLear Interrupt)          0x58
+SEI (SEt Interrupt)            0x78
+CLV (CLear oVerflow)           0xB8
+CLD (CLear Decimal)            0xD8
+SED (SEt Decimal)              0xF8
+
+Notes:
+
+  The Interrupt flag is used to prevent (SEI) or enable (CLI) maskable interrupts (aka IRQ's). It does not signal the presence or absence of an interrupt condition. The 6502 will set this flag automatically in response to an interrupt and restore it to its prior status on completion of the interrupt service routine. If you want your interrupt service routine to permit other maskable interrupts, you must clear the I flag in your code.
+
+  The Decimal flag controls how the 6502 adds and subtracts. If set, arithmetic is carried out in packed binary coded decimal. This flag is unchanged by interrupts and is unknown on power-up. The implication is that a CLD should be included in boot or interrupt coding.
+
+  The Overflow flag is generally misunderstood and therefore under-utilised. After an ADC or SBC instruction, the overflow flag will be set if the twos complement result is less than -128 or greater than +127, and it will cleared otherwise. In twos complement, 0x80 through 0xFF represents -128 through -1, and 0x00 through 0x7F represents 0 through +127. Thus, after:
+
+  CLC
+  LDA #0x7F ;   +127
+  ADC #0x01 ; +   +1
+
+the overflow flag is 1 (+127 + +1 = +128), and after:
+
+  CLC
+  LDA #0x81 ;   -127
+  ADC #0xFF ; +   -1
+
+the overflow flag is 0 (-127 + -1 = -128). The overflow flag is not affected by increments, decrements, shifts and logical operations i.e. only ADC, BIT, CLV, PLP, RTI and SBC affect it. There is no op code to set the overflow but a BIT test on an RTS instruction will do the trick.
+
+ 
+INC (INCrement memory)
+
+Affects Flags: S Z
+
+MODE           SYNTAX       HEX LEN TIM
+Zero Page     INC 0x44       0xE6  2   5
+Zero Page,X   INC 0x44,X     0xF6  2   6
+Absolute      INC 0x4400     0xEE  3   6
+Absolute,X    INC 0x4400,X   0xFE  3   7
+
+ 
+JMP (JuMP)
+
+Affects Flags: none
+
+MODE           SYNTAX       HEX LEN TIM
+Absolute      JMP 0x5597     0x4C  3   3
+Indirect      JMP (0x5597)   0x6C  3   5
+
+JMP transfers program execution to the following address (absolute) or to the location contained in the following address (indirect). Note that there is no carry associated with the indirect jump so:
+
+AN INDIRECT JUMP MUST NEVER USE A
+VECTOR BEGINNING ON THE LAST BYTE
+OF A PAGE
+
+For example if address 0x3000 contains 0x40, 0x30FF contains 0x80, and 0x3100 contains 0x50, the result of JMP (0x30FF) will be a transfer of control to 0x4080 rather than 0x5080 as you intended i.e. the 6502 took the low byte of the address from 0x30FF and the high byte from 0x3000.
+
+ 
+JSR (Jump to SubRoutine)
+
+Affects Flags: none
+
+MODE           SYNTAX       HEX LEN TIM
+Absolute      JSR 0x5597     0x20  3   6
+
+JSR pushes the address-1 of the next operation on to the stack before transferring program control to the following address. Subroutines are normally terminated by a RTS op code.
+
+ 
+LDA (LoaD Accumulator)
+
+Affects Flags: S Z
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     LDA #0x44      0xA9  2   2
+Zero Page     LDA 0x44       0xA5  2   3
+Zero Page,X   LDA 0x44,X     0xB5  2   4
+Absolute      LDA 0x4400     0xAD  3   4
+Absolute,X    LDA 0x4400,X   0xBD  3   4+
+Absolute,Y    LDA 0x4400,Y   0xB9  3   4+
+Indirect,X    LDA (0x44,X)   0xA1  2   6
+Indirect,Y    LDA (0x44),Y   0xB1  2   5+
+
++ add 1 cycle if page boundary crossed
+
+ 
+LDX (LoaD X register)
+
+Affects Flags: S Z
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     LDX #0x44      0xA2  2   2
+Zero Page     LDX 0x44       0xA6  2   3
+Zero Page,Y   LDX 0x44,Y     0xB6  2   4
+Absolute      LDX 0x4400     0xAE  3   4
+Absolute,Y    LDX 0x4400,Y   0xBE  3   4+
+
++ add 1 cycle if page boundary crossed
+
+ 
+LDY (LoaD Y register)
+
+Affects Flags: S Z
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     LDY #0x44      0xA0  2   2
+Zero Page     LDY 0x44       0xA4  2   3
+Zero Page,X   LDY 0x44,X     0xB4  2   4
+Absolute      LDY 0x4400     0xAC  3   4
+Absolute,X    LDY 0x4400,X   0xBC  3   4+
+
++ add 1 cycle if page boundary crossed
+
+ 
+LSR (Logical Shift Right)
+
+Affects Flags: S Z C
+
+MODE           SYNTAX       HEX LEN TIM
+Accumulator   LSR A         0x4A  1   2
+Zero Page     LSR 0x44       0x46  2   5
+Zero Page,X   LSR 0x44,X     0x56  2   6
+Absolute      LSR 0x4400     0x4E  3   6
+Absolute,X    LSR 0x4400,X   0x5E  3   7
+
+LSR shifts all bits right one position. 0 is shifted into bit 7 and the original bit 0 is shifted into the Carry.
+
+ 
+Wrap-Around
+
+Use caution with indexed zero page operations as they are subject to wrap-around. For example, if the X register holds 0xFF and you execute LDA 0x80,X you will not access 0x017F as you might expect; instead you access 0x7F i.e. 0x80-1. This characteristic can be used to advantage but make sure your code is well commented.
+
+It is possible, however, to access 0x017F when X = 0xFF by using the Absolute,X addressing mode of LDA 0x80,X. That is, instead of:
+
+  LDA 0x80,X    ; ZeroPage,X - the resulting object code is: B5 80
+
+which accesses 0x007F when X=0xFF, use:
+
+  LDA 0x0080,X  ; Absolute,X - the resulting object code is: BD 80 00
+
+which accesses 0x017F when X = 0xFF (a at cost of one additional byte and one additional cycle). All of the ZeroPage,X and ZeroPage,Y instructions except STX ZeroPage,Y and STY ZeroPage,X have a corresponding Absolute,X and Absolute,Y instruction. Unfortunately, a lot of 6502 assemblers don't have an easy way to force Absolute addressing, i.e. most will assemble a LDA 0x0080,X as B5 80. One way to overcome this is to insert the bytes using the .BYTE pseudo-op (on some 6502 assemblers this pseudo-op is called DB or DFB, consult the assembler documentation) as follows:
+
+  .BYTE 0xBD,0x80,0x00  ; LDA 0x0080,X (absolute,X addressing mode)
+
+The comment is optional, but highly recommended for clarity.
+
+In cases where you are writing code that will be relocated you must consider wrap-around when assigning dummy values for addresses that will be adjusted. Both zero and the semi-standard 0xFFFF should be avoided for dummy labels. The use of zero or zero page values will result in assembled code with zero page opcodes when you wanted absolute codes. With 0xFFFF, the problem is in addresses+1 as you wrap around to page 0.
+
+ 
+Program Counter
+
+When the 6502 is ready for the next instruction it increments the program counter before fetching the instruction. Once it has the op code, it increments the program counter by the length of the operand, if any. This must be accounted for when calculating branches or when pushing bytes to create a false return address (i.e. jump table addresses are made up of addresses-1 when it is intended to use an RTS rather than a JMP).
+
+The program counter is loaded least signifigant byte first. Therefore the most signifigant byte must be pushed first when creating a false return address.
+
+When calculating branches a forward branch of 6 skips the following 6 bytes so, effectively the program counter points to the address that is 8 bytes beyond the address of the branch opcode; and a backward branch of 0xFA (256-6) goes to an address 4 bytes before the branch instruction.
+
+ 
+Execution Times
+
+Op code execution times are measured in machine cycles; one machine cycle equals one clock cycle. Many instructions require one extra cycle for execution if a page boundary is crossed; these are indicated by a + following the time values shown.
+
+ 
+NOP (No OPeration)
+
+Affects Flags: none
+
+MODE           SYNTAX       HEX LEN TIM
+Implied       NOP           0xEA  1   2
+
+NOP is used to reserve space for future modifications or effectively REM out existing code.
+
+ 
+ORA (bitwise OR with Accumulator)
+
+Affects Flags: S Z
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     ORA #0x44      0x09  2   2
+Zero Page     ORA 0x44       0x05  2   3
+Zero Page,X   ORA 0x44,X     0x15  2   4
+Absolute      ORA 0x4400     0x0D  3   4
+Absolute,X    ORA 0x4400,X   0x1D  3   4+
+Absolute,Y    ORA 0x4400,Y   0x19  3   4+
+Indirect,X    ORA (0x44,X)   0x01  2   6
+Indirect,Y    ORA (0x44),Y   0x11  2   5+
+
++ add 1 cycle if page boundary crossed
+
+               
+Register Instructions
+
+Affect Flags: S Z
+
+These instructions are implied mode, have a length of one byte and require two machine cycles.
+
+MNEMONIC                 HEX
+TAX (Transfer A to X)    0xAA
+TXA (Transfer X to A)    0x8A
+DEX (DEcrement X)        0xCA
+INX (INcrement X)        0xE8
+TAY (Transfer A to Y)    0xA8
+TYA (Transfer Y to A)    0x98
+DEY (DEcrement Y)        0x88
+INY (INcrement Y)        0xC8
+
+ 
+ROL (ROtate Left)
+
+Affects Flags: S Z C
+
+MODE           SYNTAX       HEX LEN TIM
+Accumulator   ROL A         0x2A  1   2
+Zero Page     ROL 0x44       0x26  2   5
+Zero Page,X   ROL 0x44,X     0x36  2   6
+Absolute      ROL 0x4400     0x2E  3   6
+Absolute,X    ROL 0x4400,X   0x3E  3   7
+
+ROL shifts all bits left one position. The Carry is shifted into bit 0 and the original bit 7 is shifted into the Carry.
+
+ 
+ROR (ROtate Right)
+
+Affects Flags: S Z C
+
+MODE           SYNTAX       HEX LEN TIM
+Accumulator   ROR A         0x6A  1   2
+Zero Page     ROR 0x44       0x66  2   5
+Zero Page,X   ROR 0x44,X     0x76  2   6
+Absolute      ROR 0x4400     0x6E  3   6
+Absolute,X    ROR 0x4400,X   0x7E  3   7
+
+ROR shifts all bits right one position. The Carry is shifted into bit 7 and the original bit 0 is shifted into the Carry.
+
+ 
+RTI (ReTurn from Interrupt)
+
+Affects Flags: all
+
+MODE           SYNTAX       HEX LEN TIM
+Implied       RTI           0x40  1   6
+
+RTI retrieves the Processor Status Word (flags) and the Program Counter from the stack in that order (interrupts push the PC first and then the PSW).
+
+Note that unlike RTS, the return address on the stack is the actual address rather than the address-1.
+
+ 
+RTS (ReTurn from Subroutine)
+
+Affects Flags: none
+
+MODE           SYNTAX       HEX LEN TIM
+Implied       RTS           0x60  1   6
+
+RTS pulls the top two bytes off the stack (low byte first) and transfers program control to that address+1. It is used, as expected, to exit a subroutine invoked via JSR which pushed the address-1.
+
+RTS is frequently used to implement a jump table where addresses-1 are pushed onto the stack and accessed via RTS eg. to access the second of four routines:
+
+ LDX #1
+ JSR EXEC
+ JMP SOMEWHERE
+
+LOBYTE
+ .BYTE <ROUTINE0-1,<ROUTINE1-1
+ .BYTE <ROUTINE2-1,<ROUTINE3-1
+
+HIBYTE
+ .BYTE >ROUTINE0-1,>ROUTINE1-1
+ .BYTE >ROUTINE2-1,>ROUTINE3-1
+
+EXEC
+ LDA HIBYTE,X
+ PHA
+ LDA LOBYTE,X
+ PHA
+ RTS
+
+ 
+SBC (SuBtract with Carry)
+
+Affects Flags: S V Z C
+
+MODE           SYNTAX       HEX LEN TIM
+Immediate     SBC #0x44      0xE9  2   2
+Zero Page     SBC 0x44       0xE5  2   3
+Zero Page,X   SBC 0x44,X     0xF5  2   4
+Absolute      SBC 0x4400     0xED  3   4
+Absolute,X    SBC 0x4400,X   0xFD  3   4+
+Absolute,Y    SBC 0x4400,Y   0xF9  3   4+
+Indirect,X    SBC (0x44,X)   0xE1  2   6
+Indirect,Y    SBC (0x44),Y   0xF1  2   5+
+
++ add 1 cycle if page boundary crossed
+
+SBC results are dependant on the setting of the decimal flag. In decimal mode, subtraction is carried out on the assumption that the values involved are packed BCD (Binary Coded Decimal).
+
+There is no way to subtract without the carry which works as an inverse borrow. i.e, to subtract you set the carry before the operation. If the carry is cleared by the operation, it indicates a borrow occurred.
+
+ 
+STA (STore Accumulator)
+
+Affects Flags: none
+
+MODE           SYNTAX       HEX LEN TIM
+Zero Page     STA 0x44       0x85  2   3
+Zero Page,X   STA 0x44,X     0x95  2   4
+Absolute      STA 0x4400     0x8D  3   4
+Absolute,X    STA 0x4400,X   0x9D  3   5
+Absolute,Y    STA 0x4400,Y   0x99  3   5
+Indirect,X    STA (0x44,X)   0x81  2   6
+Indirect,Y    STA (0x44),Y   0x91  2   6
+
+             
+Stack Instructions
+
+These instructions are implied mode, have a length of one byte and require machine cycles as indicated. The "PuLl" operations are known as "POP" on most other microprocessors. With the 6502, the stack is always on page one (0x100-0x1FF) and works top down.
+
+MNEMONIC                        HEX TIM
+TXS (Transfer X to Stack ptr)   0x9A  2
+TSX (Transfer Stack ptr to X)   0xBA  2
+PHA (PusH Accumulator)          0x48  3
+PLA (PuLl Accumulator)          0x68  4
+PHP (PusH Processor status)     0x08  3
+PLP (PuLl Processor status)     0x28  4
+
+ 
+STX (STore X register)
+
+Affects Flags: none
+
+MODE           SYNTAX       HEX LEN TIM
+Zero Page     STX 0x44       0x86  2   3
+Zero Page,Y   STX 0x44,Y     0x96  2   4
+Absolute      STX 0x4400     0x8E  3   4
+
+ 
+STY (STore Y register)
+
+Affects Flags: none
+
+MODE           SYNTAX       HEX LEN TIM
+Zero Page     STY 0x44       0x84  2   3
+Zero Page,X   STY 0x44,X     0x94  2   4
+Absolute      STY 0x4400     0x8C  3   4
