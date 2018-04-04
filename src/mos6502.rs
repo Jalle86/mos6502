@@ -122,11 +122,16 @@ impl Mos6502 {
 		Flag::to_flag_array(flags)
 	}
 
+	fn reset(&mut self) {
+		self.pc = self.read16(0xFFFC);
+	}
+
 	fn step(&mut self) {
 		let pc = self.pc;
 		let addr_mode = self.get_addr_mode(pc);
 		let instr = self.get_instruction(pc);
-		self.pc += self.get_instr_len(pc);
+		let foo = self.mem[pc as usize];
+		self.pc += self.get_instr_len(foo);
 
 		instr(self, addr_mode);
 	}
@@ -250,7 +255,7 @@ impl Mos6502 {
 		let byte = self.mem[pc_size + 1];
 		let byte2 = self.mem[pc_size + 2];
 
-		let addr_16bit = || byte as u16 + 0xFF * byte2 as u16;
+		let addr_16bit = || self.read16(byte as u16 + byte2 as u16);
 
 		let zero_page_x = || ZeroPageX(byte.wrapping_add(self.x));
 		let zero_page_y = || ZeroPageX(byte.wrapping_add(self.y));
@@ -474,11 +479,17 @@ impl Mos6502 {
 	}
 
 	fn brk(&mut self, addr_mode: AddrMode) {
-		if let Implied = addr_mode {
-			self.set_flag(Flag::B, true);
-			//TODO: Find out how to implement
+		match addr_mode {
+			Implied => {
+				self.set_flag(Flag::B, true);
+				let pc = self.pc;
+				self.push16(pc);
+				let flags = Flag::from_flag_array(self.flags);
+				self.push(flags);
+				self.pc = self.read16(0xFFFE);
+				}
+			x => addr_mode_panic!("BRK", x),
 		}
-
 	}
 
 	fn compare(&mut self, addr_mode: AddrMode, val: u8) {
@@ -945,6 +956,16 @@ impl Mos6502 {
 	fn pop16(&mut self) -> u16 {
 		self.pop() as u16 + (self.pop() as u16) << 4
 	}
+
+	fn read16(&self, addr: u16) -> u16 {
+		self.mem[addr as usize] as u16 +
+					((self.mem[addr as usize + 1] as u16) << 8)
+	}
+
+	fn write16(&mut self, addr: u16, val: u16) {
+		self.mem[addr as usize] = (val & 0xFF) as u8;
+		self.mem[addr as usize + 1] = ((val >> 8) & 0xFF) as u8;
+	}
 }
 
 #[test]
@@ -993,4 +1014,8 @@ fn test_dec_overflow() {
 	let mut m = Mos6502::new();
 	m.dec(Absolute(0));
 	assert_eq!(m.mem[0], 255);
+}
+
+#[test]
+fn test_all_the_shit() {
 }
