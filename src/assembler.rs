@@ -3,9 +3,12 @@ extern crate regex;
 use std::collections::HashMap;
 use self::regex::*;
 
-type SymTab = HashMap<String, usize>;
+type SymTab = HashMap<String, usize>; 
 type AsmResult<T> = Result<T, AsmError>;
 type Label = (String, usize);
+
+static LABEL_REGEX : &'static str = r"^(?P<label>([A-Z][A-Z0-9]*)|\*)$";
+static NUM_REGEX : &'static str = r"^P<num>[\$%O]?[0-9A-F]+";
 
 #[derive(Debug, PartialEq)]
 enum AsmError {
@@ -17,16 +20,13 @@ enum AsmError {
 	InvalidLabelName,
 	LabelAlreadyExists,
 	InvalidAssignment,
+	InvalidOpcode,
+	InvalidAddrMode,
+	InvalidInstruction,
 }
 
 enum Operation {
 	ADC,
-}
-
-#[derive(Debug)]
-enum Operand {
-	Label(String),
-	Value(usize),
 }
 
 enum AddrMode {
@@ -47,10 +47,15 @@ enum AddrMode {
 	ZeroPageY(Operand),
 }
 
+#[derive(Debug)]
+enum Operand {
+	Label(String),
+	Value(usize),
+}
+
 struct Instruction {
 	operation: Operation,
 	addr_mode: AddrMode,
-	length: usize,
 }
 
 fn format_line(line: String) -> String {
@@ -59,8 +64,7 @@ fn format_line(line: String) -> String {
 		.replace(r"\s+"," ")
 }
 
-fn add_label(label: String, symtab: &mut SymTab, locctr: usize)
-	-> AsmResult<()> {
+fn add_label(label: String, symtab: &mut SymTab, locctr: usize)	-> AsmResult<()> {
 	if !symtab.contains_key(&label) {
 		symtab.insert(label, locctr);
 		Ok(())
@@ -74,9 +78,10 @@ fn splice_label(mut line: String) -> (Option<String>, String) {
 	match line.find(':') {
 		Some(n) => {
 			let label = line.drain(..n).collect();
-			line = line .chars()
-						.skip_while(|c| !c.is_alphanumeric())
-						.collect();
+			line = line
+				.chars()
+				.skip_while(|c| !c.is_alphanumeric())
+				.collect();
 			(Some(label), line)
 		},
 		None => (None, line),
@@ -84,10 +89,11 @@ fn splice_label(mut line: String) -> (Option<String>, String) {
 }
 
 fn locctr_start(line: &String) -> AsmResult<usize> {
-	let regex = Regex::new(r"^\*=\$(?P<addr>[\dA-F]{4})").unwrap();
+	let regex = Regex::new(r"^\*=\$(?P<addr>[\dA-F]{4})$").unwrap();
 	match regex.captures(line) {
 		Some(cap) => {
-			let s = cap.name("addr")
+			let s = cap
+				.name("addr")
 				.expect("Not a valid hexadecimal number")
 				.as_str()
 				.to_string();
@@ -97,11 +103,86 @@ fn locctr_start(line: &String) -> AsmResult<usize> {
 	}
 }
 
+fn split_at_first(s: &str, delim: char) -> (String, String) {
+	let offset = s.find(delim).unwrap_or(0);
+	let mut split_left = String::from(s);
+	let split_right = split_left.drain(..offset).collect();
+
+	(split_left, split_right)
+}
+
+/*fn optab_adc(addr_mode: AddrMode, symtab: SymTab) -> AsmResult<usize> {
+
+	match addr_mode {
+		AddrMode::Immediate(_)	=> Ok(0x69),
+		AddrMode::ZeroPage(_)	=> Ok(0x65),
+		AddrMode::ZeroPageX(_)	=> Ok(0x75),
+		AddrMode::Absolute(_)	=> Ok(0x6D),
+		AddrMode::AbsoluteX(_)	=> Ok(0x7D),
+		AddrMode::AbsoluteY(_)	=> Ok(0x79),
+		AddrMode::IndirectX(_)	=> Ok(0x61),
+		AddrMode::IndirectY(_)	=> Ok(0x71),
+		_ 						=> Err(AsmError::InvalidAddrMode),
+	}
+}
+
+fn parse_addr_mode(op: Operation, s: &str) -> AsmResult<AddrMode> {
+	match op {
+		Operation::ADC => parse_addr_mode_adc(s)
+	}
+}
+
+fn parse_addr_mode_adc(s: &str) -> AsmResult<AddrMode> {
+	let lab_num = || format!(r"{}|{}", LABEL_REGEX, NUM_REGEX);
+	let set = RegexSet::new(&[
+		lab_num(),
+		format!(r"#{}", lab_num()),
+		format!(r"{},X", lab_num()),
+		format!(r"{},Y", lab_num()),
+		format!(r"\({},X\)", lab_num()),
+		format!(r"\({}\),Y", lab_num()),
+	]).unwrap();
+
+	let matches: Vec<_> = set.matches(s).into_iter().collect();
+	if matches.len() > 0 {
+		Ok(matches[0])
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}*/
+
+fn parse_addr_mode(s: &str) -> AsmResult<AddrMode> {
+	let operand_regex = format!(r"{}|{}", LABEL_REGEX, NUM_REGEX);
+	let set = RegexSet::new(&[
+		operand_regex,
+		format!(r"#{}", operand_regex),
+		format!(r"{},X", operand_regex),
+		operand_regex,
+		format!(r"{},X", operand_regex),
+		format!(r"{},Y", operand_regex),
+		format!(r"\({},X\)", operand_regex),
+		format!(r"\({}\),Y", operand_regex),
+	]).unwrap();
+
+	let matches: Vec<_> = set.matches(s).into_iter().collect();
+	match matches.len {
+		1 => 
+	}
+}
+
+fn parse_opcode(s :&str) -> AsmResult<Operation> {
+	match s {
+		"ADC" => Ok(Operation::ADC),
+		_ => Err(AsmError::InvalidOpcode),
+	}
+}
+
 fn parse_assignment(s: &str) -> AsmResult<Label> {
 	let regex = Regex::new(r"^(.+)\s?=\s?(.+)$").unwrap();
 	let cap = regex.captures(s).ok_or(AsmError::InvalidAssignment)?;
-	let id = parse_label(cap.get(1).unwrap().as_str())?;
-	let val = parse_number(cap.get(2).unwrap().as_str())?;
+	let id = parse_label(cap.get(1).unwrap().as_str().trim())?;
+	let val = parse_number(cap.get(2).unwrap().as_str().trim())?;
 
 	Ok((id, val))
 }
@@ -116,11 +197,20 @@ fn parse_operand(s: &str) -> AsmResult<Operand> {
 }
 
 fn parse_label(s: &str) -> AsmResult<String> {
-	let regex = Regex::new(r"^(?P<label>([A-Z][A-Z0-9]*)|\*)$").unwrap();
-	regex	.captures(s)
-			.and_then(|c| c.name("label"))
-			.map(|m| m.as_str().to_string())
-			.ok_or(AsmError::InvalidLabelName)
+	let regex = Regex::new(LABEL_REGEX).unwrap();
+	regex
+		.captures(s)
+		.and_then(|c| c.name("label"))
+		.map(|m| m.as_str().to_string())
+		.and_then(filter_opcode)
+		.ok_or(AsmError::InvalidLabelName)
+}
+
+fn filter_opcode(s: String) -> Option<String> {
+	match s.as_str() {
+		"ADC" => None,
+		_ => Some(s),
+	}
 }
 
 fn parse_number(s: &str) -> AsmResult<usize> {
@@ -172,9 +262,10 @@ fn test_parse_num() {
 
 #[test]
 fn test_parse_label() {
-	//assert_eq!(parse_label("*").unwrap(), "*"); 
+	assert_eq!(parse_label("*").unwrap(), "*"); 
 	assert_eq!(parse_label("TEST").unwrap(), "TEST");
 	assert_eq!(parse_label("0PX").unwrap_err(), AsmError::InvalidLabelName);
+	assert!(parse_label("ADC").is_err());
 }
 
 #[test]
@@ -185,4 +276,9 @@ fn test_parse_assignment() {
 	assert_eq!(parse_assignment("HEJ=$1234").unwrap(), ("HEJ".to_string(), 0x1234));
 	assert!(parse_assignment("HEJ=").is_err());
 	assert!(parse_assignment("=$1234").is_err());
+}
+
+#[test]
+fn test_wtf() {
+	parse_addr_mode_adc("hej");
 }
