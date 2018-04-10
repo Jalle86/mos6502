@@ -154,13 +154,37 @@ fn parse_addr_mode_adc(s: &str) -> AsmResult<AddrMode> {
 
 fn parse_addr_mode(s: &str) -> AsmResult<AddrMode> {
 	let iter = s.chars();
+	let len = iter.len();
 
-	if let Some(c) = iter.next() {
+	match len {
+		0 => Ok(AddrMode::Implied)
+		1 => {
+			if iter.next() == 'A' {
+				Ok(AddrMode::Accumulator);
+			}
+			else {
+				Err(InvalidAddrMode);
+			}
+		}
+		_ => {
 
+		}
 	}
-	else {
-		
+}
+
+fn parse_addr_mode_zeropage(s: String) -> AsmResult<AddrMode> {
+	let offset = s.find(',').unwrap_or(s.len());
+	let t: String = s.drain(..offset).collect();
+
+	let op = parse_operand(&t)?;
+
+	match s.as_str() {
+		",X" => Ok(AddrMode::ZeroPageX(op)),
+		",Y" => Ok(AddrMode::ZeroPageY(op)),
+		"" => Ok(AddrMode::ZeroPage(op)),
+		_ => Err(AsmError::InvalidAddrMode),
 	}
+
 }
 
 fn parse_opcode(s :&str) -> AsmResult<Operation> {
