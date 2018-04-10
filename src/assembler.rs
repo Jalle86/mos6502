@@ -153,21 +153,13 @@ fn parse_addr_mode_adc(s: &str) -> AsmResult<AddrMode> {
 }*/
 
 fn parse_addr_mode(s: &str) -> AsmResult<AddrMode> {
-	let operand_regex = format!(r"{}|{}", LABEL_REGEX, NUM_REGEX);
-	let set = RegexSet::new(&[
-		operand_regex,
-		format!(r"#{}", operand_regex),
-		format!(r"{},X", operand_regex),
-		operand_regex,
-		format!(r"{},X", operand_regex),
-		format!(r"{},Y", operand_regex),
-		format!(r"\({},X\)", operand_regex),
-		format!(r"\({}\),Y", operand_regex),
-	]).unwrap();
+	let iter = s.chars();
 
-	let matches: Vec<_> = set.matches(s).into_iter().collect();
-	match matches.len {
-		1 => 
+	if let Some(c) = iter.next() {
+
+	}
+	else {
+		
 	}
 }
 
