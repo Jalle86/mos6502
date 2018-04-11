@@ -169,19 +169,18 @@ fn parse_addr_mode(s: &str) -> AsmResult<AddrMode> {
 			}
 		}
 		_ => match chars.next().unwrap() {
-			'*' => parse_zeropage_addressing(chars.collect()),
+			'*' => parse_zeropage_addressing(&mut chars.collect()),
 			_ => panic!(),
 		}
 	}
 }
 
 fn parse_zeropage_addressing(s: &mut String) -> AsmResult<AddrMode> {
-	let offset = s.find(',').unwrap_or(s.len());
-	let t: String = s.drain(..offset).collect();
+	let (body, rest) = split_at_first(s, ',');
 
-	let op = parse_operand(&t)?;
+	let op = parse_operand(&body)?;
 
-	match s.as_str() {
+	match rest.as_str() {
 		"" => Ok(AddrMode::ZeroPage(op)),
 		",X" => Ok(AddrMode::ZeroPageX(op)),
 		",Y" => Ok(AddrMode::ZeroPageY(op)),
@@ -191,14 +190,23 @@ fn parse_zeropage_addressing(s: &mut String) -> AsmResult<AddrMode> {
 }
 
 fn parse_indirect_addressing(s: &mut str) -> AsmResult<AddrMode> {
-	let (body, rest) = split_at_first(s, ')');
-
-	let op = parse_operand(&body)?;
-
-	match rest.as_str() {
-		"" => Ok(AddrMode::Indirect(op)),
-		",Y" => Ok(AddrMode::IndirectY(op)),
+	let mut body = String::new();
+	let schars = s.chars();
+	for c in schars {
+		match c {
+			')' | ',' => break,
+			_ => body.push(c),
+		}
 	}
+	let rest : String = schars.collect();
+	let op = parse_operand(&body)?;
+	match rest.as_str() {
+		",X)" => Ok(AddrMode::IndirectX(op)),
+		"),Y" => Ok(AddrMode::IndirectY(op)),
+		"" => Ok(AddrMode::Indirect(op)),
+		_ => Err(AsmError::InvalidAddrMode),
+	}
+
 }
 
 fn parse_opcode(s :&str) -> AsmResult<Operation> {
