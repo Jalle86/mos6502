@@ -25,10 +25,12 @@ enum AsmError {
 	InvalidInstruction,
 }
 
+#[derive(Debug)]
 enum Operation {
 	ADC,
 }
 
+#[derive(Debug, PartialEq)]
 enum AddrMode {
 	Absolute(Operand),
 	AbsoluteX(Operand),
@@ -47,7 +49,7 @@ enum AddrMode {
 	ZeroPageY(Operand),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Operand {
 	Label(String),
 	Value(usize),
@@ -153,38 +155,50 @@ fn parse_addr_mode_adc(s: &str) -> AsmResult<AddrMode> {
 }*/
 
 fn parse_addr_mode(s: &str) -> AsmResult<AddrMode> {
-	let iter = s.chars();
-	let len = iter.len();
+	let mut chars = s.chars();
+	let len = s.chars().take(2).count(); //only need the first 2 chars to count
 
 	match len {
-		0 => Ok(AddrMode::Implied)
+		0 => Ok(AddrMode::Implied),
 		1 => {
-			if iter.next() == 'A' {
-				Ok(AddrMode::Accumulator);
+			if chars.next().unwrap() == 'A' {
+				Ok(AddrMode::Accumulator)
 			}
 			else {
-				Err(InvalidAddrMode);
+				Err(AsmError::InvalidAddrMode)
 			}
 		}
-		_ => {
-
+		_ => match chars.next().unwrap() {
+			'*' => parse_zeropage_addressing(chars.collect()),
+			_ => panic!(),
 		}
 	}
 }
 
-fn parse_addr_mode_zeropage(s: String) -> AsmResult<AddrMode> {
+fn parse_zeropage_addressing(s: &mut String) -> AsmResult<AddrMode> {
 	let offset = s.find(',').unwrap_or(s.len());
 	let t: String = s.drain(..offset).collect();
 
 	let op = parse_operand(&t)?;
 
 	match s.as_str() {
+		"" => Ok(AddrMode::ZeroPage(op)),
 		",X" => Ok(AddrMode::ZeroPageX(op)),
 		",Y" => Ok(AddrMode::ZeroPageY(op)),
-		"" => Ok(AddrMode::ZeroPage(op)),
 		_ => Err(AsmError::InvalidAddrMode),
 	}
 
+}
+
+fn parse_indirect_addressing(s: &mut str) -> AsmResult<AddrMode> {
+	let (body, rest) = split_at_first(s, ')');
+
+	let op = parse_operand(&body)?;
+
+	match rest.as_str() {
+		"" => Ok(AddrMode::Indirect(op)),
+		",Y" => Ok(AddrMode::IndirectY(op)),
+	}
 }
 
 fn parse_opcode(s :&str) -> AsmResult<Operation> {
@@ -295,6 +309,17 @@ fn test_parse_assignment() {
 }
 
 #[test]
-fn test_wtf() {
-	parse_addr_mode_adc("hej");
+fn test_addr_mode() {
+	assert_eq!(parse_addr_mode(&String::from("*$1234,X")).unwrap(),
+		AddrMode::ZeroPageX(Operand::Value(0x1234)));
+	assert_eq!(parse_addr_mode(&String::from("*$248F,Y")).unwrap(),
+		AddrMode::ZeroPageY(Operand::Value(0x248F)));
+	assert_eq!(parse_addr_mode(&String::from("*$248F")).unwrap(),
+		AddrMode::ZeroPage(Operand::Value(0x248F)));
+	assert_eq!(parse_addr_mode(&String::from("($1234)")).unwrap(),
+		AddrMode::Indirect(Operand::Value(0x1234)));
+	assert_eq!(parse_addr_mode(&String::from("($24,X)")).unwrap(),
+		AddrMode::ZeroPageY(Operand::Value(0x24)));
+	assert_eq!(parse_addr_mode(&String::from("($48),Y")).unwrap(),
+		AddrMode::ZeroPage(Operand::Value(0x48)));
 }
