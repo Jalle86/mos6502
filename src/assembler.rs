@@ -23,11 +23,14 @@ enum AsmError {
 	InvalidOpcode,
 	InvalidAddrMode,
 	InvalidInstruction,
+	InvalidPragma,
 }
 
 #[derive(Debug)]
 enum Operation {
-	ADC,
+	ADC, AND, ASL, BCC, BCS, BEQ, BIT, BMI, BNE, BPL, BRK, BVC, BVS, CLC, CLD, CLI, CLV, CMP, CPX,
+	CPY, DEC, DEX, DEY, EOR, INC, INX, INY, JMP, JSR, LDA, LDY, LDX, LSR, NOP, ORA, PHA, PHP, PLA,
+	PLP, ROL, ROR, RTI, RTS, SBC, SEC, SED, SEI, STA, STX, STY, TAX, TAY, TSX, TXA, TXS, TYA,
 }
 
 #[derive(Debug, PartialEq)]
@@ -53,6 +56,13 @@ enum AddrMode {
 enum Operand {
 	Label(String),
 	Value(usize),
+}
+
+#[derive(Debug, PartialEq)]
+enum Pragma {
+	Byte(Operand),
+	Word(Operand),
+	End,
 }
 
 struct Instruction {
@@ -106,9 +116,9 @@ fn locctr_start(line: &String) -> AsmResult<usize> {
 }
 
 fn split_at_first(s: &str, delim: char) -> (String, String) {
-	let offset = s.find(delim).unwrap_or(0);
-	let mut split_left = String::from(s);
-	let split_right = split_left.drain(..offset).collect();
+	let offset = s.find(delim).unwrap_or(s.len());
+	let mut split_right = String::from(s);
+	let split_left = split_right.drain(..offset).collect();
 
 	(split_left, split_right)
 }
@@ -170,7 +180,8 @@ fn parse_addr_mode(s: &str) -> AsmResult<AddrMode> {
 		}
 		_ => match chars.next().unwrap() {
 			'*' => parse_zeropage_addressing(&mut chars.collect()),
-			_ => panic!(),
+			'(' => parse_indirect_addressing(&mut chars.collect()),
+			_ 	=> parse_absolute_addressing(&mut String::from(s)),
 		}
 	}
 }
@@ -184,34 +195,90 @@ fn parse_zeropage_addressing(s: &mut String) -> AsmResult<AddrMode> {
 		"" => Ok(AddrMode::ZeroPage(op)),
 		",X" => Ok(AddrMode::ZeroPageX(op)),
 		",Y" => Ok(AddrMode::ZeroPageY(op)),
-		_ => Err(AsmError::InvalidAddrMode),
+		_ => Err(AsmError::InvalidLabelName),
 	}
 
 }
 
-fn parse_indirect_addressing(s: &mut str) -> AsmResult<AddrMode> {
+fn parse_indirect_addressing(s: &String) -> AsmResult<AddrMode> {
+	let mut chars = s.chars();
 	let mut body = String::new();
-	let schars = s.chars();
-	for c in schars {
-		match c {
-			')' | ',' => break,
-			_ => body.push(c),
+	let mut rest = String::new();
+	while let Some(ss) = chars.next() {
+		match ss {
+			',' | ')' => {
+				rest.push(ss);
+				break;
+			},
+			c => body.push(c),
 		}
 	}
-	let rest : String = schars.collect();
+
+	rest.push_str(&chars.collect::<String>());
+
 	let op = parse_operand(&body)?;
 	match rest.as_str() {
 		",X)" => Ok(AddrMode::IndirectX(op)),
 		"),Y" => Ok(AddrMode::IndirectY(op)),
-		"" => Ok(AddrMode::Indirect(op)),
-		_ => Err(AsmError::InvalidAddrMode),
+		")" => Ok(AddrMode::Indirect(op)),
+		_ => Err(AsmError::InvalidLabelName),
 	}
 
 }
 
+fn parse_absolute_addressing(s: &String) -> AsmResult<AddrMode> {
+	let (body, rest) = split_at_first(s, ',');
+
+	let op = parse_operand(&body)?;
+
+	match rest.as_str() {
+		"" => Ok(AddrMode::Absolute(op)),
+		",X" => Ok(AddrMode::AbsoluteX(op)),
+		",Y" => Ok(AddrMode::AbsoluteY(op)),
+		_ => panic!(),
+	}
+}
+
+fn parse_pragma(s: &str) -> AsmResult<Pragma> {
+	let (pragma, value) = split_at_first(s, ' ');
+
+	match pragma.as_str() {
+		"END" => Ok(Pragma::End),
+		"BYTE" => parse_byte(value.trim()),
+		"WORD" => parse_word(value.trim()),
+		_ => Err(AsmError::InvalidPragma),
+	}
+}
+
+fn parse_byte(s: &str) -> AsmResult<Pragma> {
+	let op = parse_operand(s)?;
+	Ok(Pragma::Byte(op))
+}
+
+fn parse_word(s: &str) -> AsmResult<Pragma> {
+	let op = parse_operand(s)?;
+	Ok(Pragma::Word(op))
+}
+
 fn parse_opcode(s :&str) -> AsmResult<Operation> {
+	use self::Operation::*;
+
 	match s {
-		"ADC" => Ok(Operation::ADC),
+		"ADC" => Ok(ADC),	"AND" => Ok(AND),	"ASL" => Ok(ASL),	"BCC" => Ok(BCC),
+		"BCS" => Ok(BCS),	"BEQ" => Ok(BEQ),	"BIT" => Ok(BIT),	"BMI" => Ok(BMI),
+		"BNE" => Ok(BNE),	"BPL" => Ok(BPL),	"BRK" => Ok(BRK),	"BVC" => Ok(BVC),
+		"BVS" => Ok(BVS),	"CLC" => Ok(CLC),	"CLD" => Ok(CLD),	"CLI" => Ok(CLI),
+		"CLV" => Ok(CLV),	"CMP" => Ok(CMP),	"CPX" => Ok(CPX),	"CPY" => Ok(CPY),
+		"DEC" => Ok(DEC),	"DEX" => Ok(DEX),	"DEY" => Ok(DEY),	"EOR" => Ok(EOR),
+		"INC" => Ok(INC),	"INX" => Ok(INX),	"INY" => Ok(INY),	"JMP" => Ok(JMP),
+		"JSR" => Ok(JSR),	"LDA" => Ok(LDA),	"LDX" => Ok(LDX),	"LDY" => Ok(LDY),
+		"LSR" => Ok(LSR),	"NOP" => Ok(NOP),	"ORA" => Ok(ORA),	"PHA" => Ok(PHA),
+		"PHP" => Ok(PHP),	"PLP" => Ok(PLP),	"ROL" => Ok(ROL),	"ROR" => Ok(ROR),
+		"RTI" => Ok(RTI),	"RTS" => Ok(RTS),	"SBC" => Ok(SBC),	"SEC" => Ok(SEC),
+		"SED" => Ok(SED),	"SEI" => Ok(SEI),	"STA" => Ok(STA),	"STX" => Ok(STX),
+		"STY" => Ok(STY),	"TAX" => Ok(TAX),	"TAY" => Ok(TAY),	"TSX" => Ok(TSX),
+		"TXA" => Ok(TXA),	"TXS" => Ok(TXS),	"TYA" => Ok(TYA),
+
 		_ => Err(AsmError::InvalidOpcode),
 	}
 }
@@ -317,17 +384,75 @@ fn test_parse_assignment() {
 }
 
 #[test]
-fn test_addr_mode() {
-	assert_eq!(parse_addr_mode(&String::from("*$1234,X")).unwrap(),
-		AddrMode::ZeroPageX(Operand::Value(0x1234)));
-	assert_eq!(parse_addr_mode(&String::from("*$248F,Y")).unwrap(),
-		AddrMode::ZeroPageY(Operand::Value(0x248F)));
-	assert_eq!(parse_addr_mode(&String::from("*$248F")).unwrap(),
-		AddrMode::ZeroPage(Operand::Value(0x248F)));
-	assert_eq!(parse_addr_mode(&String::from("($1234)")).unwrap(),
-		AddrMode::Indirect(Operand::Value(0x1234)));
-	assert_eq!(parse_addr_mode(&String::from("($24,X)")).unwrap(),
-		AddrMode::ZeroPageY(Operand::Value(0x24)));
-	assert_eq!(parse_addr_mode(&String::from("($48),Y")).unwrap(),
-		AddrMode::ZeroPage(Operand::Value(0x48)));
+fn test_implied() {
+	assert_addr_mode("", AddrMode::Implied);
+}
+
+#[test]
+fn test_accumulator() {
+	assert_addr_mode("A", AddrMode::Accumulator);
+}
+
+#[test]
+fn test_zeropage() {
+	assert_addr_mode("*$1234", AddrMode::ZeroPage(Operand::Value(0x1234)));
+}
+
+#[test]
+fn test_zeropage_x() {
+	assert_addr_mode("*$248F,X", AddrMode::ZeroPageX(Operand::Value(0x248F)));
+}
+
+#[test]
+fn test_zeropage_y() {
+	assert_addr_mode("*$248F,Y", AddrMode::ZeroPageY(Operand::Value(0x248F)));
+}
+
+#[test]
+fn test_indirect() {
+	assert_addr_mode("($248F)", AddrMode::Indirect(Operand::Value(0x248F)));
+}
+
+#[test]
+fn test_indirect_x() {
+	assert_addr_mode("($248F,X)", AddrMode::IndirectX(Operand::Value(0x248F)));
+}
+
+#[test]
+fn test_indirect_y() {
+	assert_addr_mode("($248F),Y", AddrMode::IndirectY(Operand::Value(0x248F)));
+}
+
+#[test]
+fn test_absolute() {
+	assert_addr_mode("TJOLAHOPP", AddrMode::Absolute(Operand::Label(String::from("TJOLAHOPP"))));
+}
+
+#[test]
+fn test_absolute_x() {
+	assert_addr_mode("TJOLAHOPP,X", AddrMode::AbsoluteX(Operand::Label(String::from("TJOLAHOPP"))));
+}
+
+#[test]
+fn test_absolute_y() {
+	assert_addr_mode("TJOLAHOPP,Y", AddrMode::AbsoluteY(Operand::Label(String::from("TJOLAHOPP"))));
+}
+
+#[test]
+fn test_pragma_end() {
+	assert_eq!(parse_pragma("END").unwrap(), Pragma::End);
+}
+
+#[test]
+fn test_pragma_byte() {
+	assert_eq!(parse_pragma("BYTE $1234").unwrap(), Pragma::Byte(Operand::Value(0x1234)));
+}
+
+#[test]
+fn test_pragma_word() {
+	assert_eq!(parse_pragma("WORD $1234").unwrap(), Pragma::Word(Operand::Value(0x1234)));
+}
+
+fn assert_addr_mode(s: &str, addr_mode: AddrMode) {
+	assert_eq!(parse_addr_mode(&String::from(s)).unwrap(), addr_mode);
 }
