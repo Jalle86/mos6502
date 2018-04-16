@@ -5,7 +5,6 @@ use self::regex::*;
 use std::io::BufRead;
 
 type AsmResult<T> = Result<T, AsmError>;
-type Label = (String, usize);
 type Lines = Vec<Line>;
 
 static LABEL_REGEX: &'static str = r"^(?P<label>([A-Z][A-Z0-9]*)|\*)$";
@@ -42,16 +41,36 @@ enum AddrMode {
 	AbsoluteY(Operand),
 	
 	Accumulator,
+
 	Immediate(Operand),
+
 	Implied,
 	
 	Indirect(Operand),
 	IndirectX(Operand),
 	IndirectY(Operand),
+
 	Relative(Operand),
+
 	ZeroPage(Operand),
 	ZeroPageX(Operand),
 	ZeroPageY(Operand),
+}
+
+struct ParsedData {
+	symtab:	SymTab,
+	lines:	Lines,
+}
+
+#[derive(Debug, PartialEq)]
+struct Instruction {
+	operation: Operation,
+	addr_mode: AddrMode,
+}
+
+struct Label {
+	lvalue: Identifier,
+	rvalue: Identifier,
 }
 
 #[derive(Debug, PartialEq)]
@@ -68,25 +87,19 @@ enum Pragma {
 }
 
 #[derive(Debug, PartialEq)]
-struct Instruction {
-	operation: Operation,
-	addr_mode: AddrMode,
-}
-
-#[derive(Debug, PartialEq)]
 enum Line {
 	Pragma(Pragma),
 	Instruction(Instruction),
 }
 
+enum Identifier {
+	PC,
+	Operand(Operand),
+}
+
 struct SymTab {
 	tab:				HashMap<String, usize>,
 	location_counter:	usize,
-}
-
-struct ParsedData {
-	symtab: SymTab,
-	lines: Lines,
 }
 
 impl ParsedData {
@@ -114,7 +127,7 @@ impl SymTab {
 		self.tab.insert(s, n);
 	}
 
-	fn insert_counter(&mut self, s: String) {
+	fn insert_at_counter(&mut self, s: String) {
 		self.tab.insert(s, self.location_counter);
 	}
 
@@ -164,7 +177,20 @@ fn pass1<R>(mut reader: R) -> AsmResult<ParsedData>
 
 		match bytes {
 			0 => break,
-			_ => parse_line(line, &mut parsed_data)?,
+			_ => {
+				let (label, rest) = split_at_label(line);
+				if let Some(label_text) = label {
+					add_label(label_text, &mut parsed_data.symtab)?;
+				}
+
+				let line = parse_line(rest)?;
+
+				if let Line::Instruction(ref instr) = line {
+					parsed_data.symtab.increment_counter(instruction_length(&instr.addr_mode))
+				};
+
+				parsed_data.lines.push(line);
+			},
 		}
 	}
 
@@ -177,49 +203,45 @@ fn format_line(line: String) -> String {
 		.replace(r"\s+"," ")
 }
 
-fn parse_line(line: String, parsed_data: &mut ParsedData) -> AsmResult<()>{
+fn parse_line(line: String) -> AsmResult<Line>{
 	let mut chars = line.chars().peekable();
+
 	match chars.peek() {
 		Some(&'.') => {
 			chars.next();
-			pragma_line(chars.collect::<String>(), &mut parsed_data.lines)?;
+			let line = parse_pragma(&chars.collect::<String>())?;
+			Ok(Line::Pragma(line))
 		}
-		Some(_) => instruction_line(chars.collect::<String>(), parsed_data)?,
-		None => (),
-	};
-
-	Ok(())
+		Some(_) => {
+			let line = instruction_line(chars.collect::<String>())?;
+			Ok(Line::Instruction(line))
+		}
+		None => panic!(),
+	}
 }
 
-fn pragma_line(line: String, lines: &mut Lines) -> AsmResult<()> {
-	let pragma = parse_pragma(&line)?;
-	lines.push(Line::Pragma(pragma));
+fn parse_pragma(s: &str) -> AsmResult<Pragma> {
+	let (pragma, value) = split_at_first(s, ' ');
 
-	Ok(())
+	match pragma.as_str() {
+		"END" => Ok(Pragma::End),
+		"BYTE" => parse_byte(value.trim()),
+		"WORD" => parse_word(value.trim()),
+		_ => Err(AsmError::InvalidPragma),
+	}
 }
 
-fn instruction_line(line: String, parsed_data: &mut ParsedData) -> AsmResult<()> {
-	let (label_option, instruction_result) = parse_instruction_line(line);
-
-	if let Some(label_result) = label_option {
-		let label = label_result?;
-		add_label(label, &mut parsed_data.symtab)?;
-	};
-
-	let instruction = instruction_result?;
-	parsed_data.lines.push(Line::Instruction(instruction));
-
-	Ok(())
+fn parse_byte(s: &str) -> AsmResult<Pragma> {
+	let op = parse_operand(s)?;
+	Ok(Pragma::Byte(op))
 }
 
-fn parse_instruction_line(line: String) -> (Option<AsmResult<String>>, AsmResult<Instruction>) {
-	let (label_text, instruction_text) = split_at_label(line);
-	let label = label_text.map(|s| parse_label(&s));
-
-	(label, parse_instruction(instruction_text))
+fn parse_word(s: &str) -> AsmResult<Pragma> {
+	let op = parse_operand(s)?;
+	Ok(Pragma::Word(op))
 }
 
-fn parse_instruction(s: String) -> AsmResult<Instruction> {
+fn instruction_line(s: String) -> AsmResult<Instruction> {
 	let (operation_text, addr_mode_text) = split_at_first(&s, ' ');
 
 	let operation = parse_opcode(&operation_text)?;
@@ -332,34 +354,34 @@ fn parse_absolute_addressing(s: &String) -> AsmResult<AddrMode> {
 	}
 }
 
-fn parse_pragma(s: &str) -> AsmResult<Pragma> {
-	let (pragma, value) = split_at_first(s, ' ');
+fn instruction_length(addr_mode: &AddrMode) -> usize {
+	use self::AddrMode::*;
 
-	match pragma.as_str() {
-		"END" => Ok(Pragma::End),
-		"BYTE" => parse_byte(value.trim()),
-		"WORD" => parse_word(value.trim()),
-		_ => Err(AsmError::InvalidPragma),
+	match *addr_mode {
+		Accumulator	| Implied => 1,
+
+		Immediate(_) | Indirect(_) | IndirectX(_) | IndirectY(_) | Relative(_) | ZeroPage(_) |
+		ZeroPageX(_) | ZeroPageY(_) => 2,
+
+		Absolute(_) | AbsoluteX(_) | AbsoluteY(_) => 3,
 	}
 }
 
-fn parse_byte(s: &str) -> AsmResult<Pragma> {
-	let op = parse_operand(s)?;
-	Ok(Pragma::Byte(op))
-}
-
-fn parse_word(s: &str) -> AsmResult<Pragma> {
-	let op = parse_operand(s)?;
-	Ok(Pragma::Word(op))
-}
-
 fn parse_assignment(s: &str) -> AsmResult<Label> {
-	let regex = Regex::new(r"^(.+)\s?=\s?(.+)$").unwrap();
-	let cap = regex.captures(s).ok_or(AsmError::InvalidAssignment)?;
-	let id = parse_label(cap.get(1).unwrap().as_str().trim())?;
-	let val = parse_number(cap.get(2).unwrap().as_str().trim())?;
+	let (lvalue, mut rvalue) = split_at_first(s, '=');
 
-	Ok((id, val))
+	let lvalue = Identifier::Operand(parse_operand(&lvalue.trim())?);
+
+	rvalue.remove(0);
+	let rvalue = match rvalue.trim() {
+		"*" => Identifier::PC,
+		s => Identifier::Operand(parse_operand(s.trim())?),
+	};
+
+	Ok(Label {
+		lvalue: lvalue,
+		rvalue: rvalue,
+	})
 }
 
 fn parse_operand(s: &str) -> AsmResult<Operand> {
@@ -428,7 +450,7 @@ fn parse_decimal(s: &str) -> AsmResult<usize> {
 
 fn add_label(label: String, symtab: &mut SymTab) -> AsmResult<()> {
 	if !symtab.contains(&label) {
-		symtab.insert_counter(label);
+		symtab.insert_at_counter(label);
 		Ok(())
 	}
 	else {
@@ -558,18 +580,8 @@ fn test_pragma_word() {
 
 #[test]
 fn test_instruction() {
-	assert_eq!(parse_instruction(String::from("ADC #$1234")).unwrap(),
+	assert_eq!(instruction_line(String::from("ADC #$1234")).unwrap(),
 		Instruction {
-			operation: Operation::ADC,
-			addr_mode: AddrMode::Immediate(Operand::Value(0x1234))
-		});
-}
-
-#[test]
-fn test_instruction_line() {
-	let (label, instr) = parse_instruction_line(String::from("TEST: ADC #$1234"));
-	assert_eq!(label.unwrap(), Ok(String::from("TEST")));
-	assert_eq!(instr.unwrap(), Instruction {
 			operation: Operation::ADC,
 			addr_mode: AddrMode::Immediate(Operand::Value(0x1234))
 		});
@@ -577,29 +589,4 @@ fn test_instruction_line() {
 
 fn assert_addr_mode(s: &str, addr_mode: AddrMode) {
 	assert_eq!(parse_addr_mode(&String::from(s)).unwrap(), addr_mode);
-}
-
-#[test]
-fn test_line() {
-	let mut symtab = SymTab::new();
-	symtab.set_counter(123);
-	let mut lines = Lines::new();
-
-	let res = parse_line(String::from("TEST: ADC #$1234"), &mut symtab, &mut lines);
-
-	assert!(*symtab.get("TEST").unwrap() == 123);
-	assert!(lines.pop().unwrap() == Line::Instruction(Instruction {
-			operation: Operation::ADC,
-			addr_mode: AddrMode::Immediate(Operand::Value(0x1234))
-		}));
-}
-
-#[test]
-fn test_pragma() {
-	let mut symtab = SymTab::new();
-	let mut lines = Lines::new();
-
-	let res = parse_line(String::from(".BYTE $1234"), &mut symtab, &mut lines);
-
-	assert!(lines.pop().unwrap() == Line::Pragma(Pragma::Byte(Operand::Value(0x1234))));
 }
