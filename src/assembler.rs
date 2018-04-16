@@ -68,6 +68,7 @@ struct Instruction {
 	addr_mode: AddrMode,
 }
 
+#[derive(Debug, PartialEq)]
 struct Label {
 	lvalue: Identifier,
 	rvalue: Identifier,
@@ -92,6 +93,7 @@ enum Line {
 	Instruction(Instruction),
 }
 
+#[derive(Debug, PartialEq)]
 enum Identifier {
 	PC,
 	Operand(Operand),
@@ -369,19 +371,24 @@ fn instruction_length(addr_mode: &AddrMode) -> usize {
 
 fn parse_assignment(s: &str) -> AsmResult<Label> {
 	let (lvalue, mut rvalue) = split_at_first(s, '=');
+	println!("..{}...{}..", lvalue.trim(), rvalue.trim());
 
-	let lvalue = Identifier::Operand(parse_operand(&lvalue.trim())?);
+	let lvalue = parse_identifier(lvalue.trim())?;
 
 	rvalue.remove(0);
-	let rvalue = match rvalue.trim() {
-		"*" => Identifier::PC,
-		s => Identifier::Operand(parse_operand(s.trim())?),
-	};
+	let rvalue = parse_identifier(rvalue.trim())?;
 
 	Ok(Label {
 		lvalue: lvalue,
 		rvalue: rvalue,
 	})
+}
+
+fn parse_identifier(s: &str) -> AsmResult<Identifier> {
+	match s {
+		"*" => Ok(Identifier::PC),
+		s => Ok(Identifier::Operand(parse_operand(s)?)),
+	}
 }
 
 fn parse_operand(s: &str) -> AsmResult<Operand> {
@@ -411,7 +418,8 @@ fn filter_opcode(s: String) -> Option<String> {
 }
 
 fn parse_number(s: &str) -> AsmResult<usize> {
-	match s.chars().next().unwrap() {
+	// remember to throw error if string happens to be empty
+	match s.chars().next().ok_or(AsmError::InvalidNumberFormat)? {
 		'$' => parse_hex(&s[1..]),
 		'%' => parse_binary(&s[1..]),
 		'O' => parse_octal(&s[1..]),
@@ -500,10 +508,15 @@ fn test_parse_label() {
 
 #[test]
 fn test_parse_assignment() {
-	assert_eq!(parse_assignment("HEJ = $1234").unwrap(), ("HEJ".to_string(), 0x1234));
-	assert_eq!(parse_assignment("HEJ =$1234").unwrap(), ("HEJ".to_string(), 0x1234));
-	assert_eq!(parse_assignment("HEJ= $1234").unwrap(), ("HEJ".to_string(), 0x1234));
-	assert_eq!(parse_assignment("HEJ=$1234").unwrap(), ("HEJ".to_string(), 0x1234));
+	let label = Label {
+		lvalue: Identifier::Operand(Operand::Label(String::from("HEJ"))),
+		rvalue: Identifier::Operand(Operand::Value(0x1234)),
+	};
+	
+	assert_eq!(parse_assignment("HEJ = $1234").unwrap(), label);
+	assert_eq!(parse_assignment("HEJ =$1234").unwrap(), label);
+	assert_eq!(parse_assignment("HEJ= $1234").unwrap(), label);
+	assert_eq!(parse_assignment("HEJ=$1234").unwrap(), label);
 	assert!(parse_assignment("HEJ=").is_err());
 	assert!(parse_assignment("=$1234").is_err());
 }
