@@ -69,9 +69,15 @@ struct Instruction {
 }
 
 #[derive(Debug, PartialEq)]
-struct Label {
-	lvalue: Identifier,
+struct LabelAssignment {
+	lvalue: String,
 	rvalue: Identifier,
+}
+
+#[derive(Debug, PartialEq)]
+enum Identifier {
+	Number(usize),
+	PC
 }
 
 #[derive(Debug, PartialEq)]
@@ -91,12 +97,6 @@ enum Pragma {
 enum Line {
 	Pragma(Pragma),
 	Instruction(Instruction),
-}
-
-#[derive(Debug, PartialEq)]
-enum Identifier {
-	PC,
-	Operand(Operand),
 }
 
 struct SymTab {
@@ -144,6 +144,16 @@ impl SymTab {
 	fn increment_counter(&mut self, n: usize) {
 		self.location_counter += n;
 	}
+
+	fn add_label(&mut self, label: String, value: usize) -> AsmResult<()> {
+	if !self.contains(&label) {
+		self.insert(label, value);
+		Ok(())
+	}
+	else {
+		Err(AsmError::LabelAlreadyExists)
+	}
+}
 }
 
 /*fn optab_adc(addr_mode: AddrMode, symtab: SymTab) -> AsmResult<usize> {
@@ -180,16 +190,29 @@ fn pass1<R>(mut reader: R) -> AsmResult<ParsedData>
 		match bytes {
 			0 => break,
 			_ => {
+				if line.contains("=") {
+					let assignment = parse_label_assignment(&line)?;
+					let identifier = evaluate_identifier(assignment.rvalue, &parsed_data.symtab);
+					parsed_data.symtab.insert(assignment.lvalue, identifier);
+
+					continue;
+				}
+
 				let (label, rest) = split_at_label(line);
 				if let Some(label_text) = label {
-					add_label(label_text, &mut parsed_data.symtab)?;
+					let pc = parsed_data.symtab.location_counter;
+					parsed_data.symtab.insert(label_text, pc);
 				}
 
 				let line = parse_line(rest)?;
 
-				if let Line::Instruction(ref instr) = line {
-					parsed_data.symtab.increment_counter(instruction_length(&instr.addr_mode))
-				};
+				match line {
+					Line::Instruction(ref instr) => parsed_data.symtab.increment_counter(
+						instruction_length(&instr.addr_mode)),
+					Line::Pragma(Pragma::Byte(_)) => parsed_data.symtab.increment_counter(1),
+					Line::Pragma(Pragma::Word(_)) => parsed_data.symtab.increment_counter(2),
+					Line::Pragma(Pragma::End) => (),
+				}
 
 				parsed_data.lines.push(line);
 			},
@@ -197,6 +220,13 @@ fn pass1<R>(mut reader: R) -> AsmResult<ParsedData>
 	}
 
 	Ok(parsed_data)
+}
+
+fn evaluate_identifier(identifier: Identifier, symtab: &SymTab) -> usize {
+	match identifier {
+		Identifier::Number(n) => n,
+		Identifier::PC => symtab.location_counter,
+	}
 }
 
 fn format_line(line: String) -> String {
@@ -369,25 +399,21 @@ fn instruction_length(addr_mode: &AddrMode) -> usize {
 	}
 }
 
-fn parse_assignment(s: &str) -> AsmResult<Label> {
+fn parse_label_assignment(s: &str) -> AsmResult<LabelAssignment> {
 	let (lvalue, mut rvalue) = split_at_first(s, '=');
-	println!("..{}...{}..", lvalue.trim(), rvalue.trim());
 
-	let lvalue = parse_identifier(lvalue.trim())?;
+	rvalue.remove(0); // remove '=' character
 
-	rvalue.remove(0);
-	let rvalue = parse_identifier(rvalue.trim())?;
-
-	Ok(Label {
-		lvalue: lvalue,
-		rvalue: rvalue,
+	Ok(LabelAssignment {
+		lvalue: parse_label(lvalue.trim())?,
+		rvalue: parse_identifier(rvalue.trim())?,
 	})
 }
 
 fn parse_identifier(s: &str) -> AsmResult<Identifier> {
 	match s {
 		"*" => Ok(Identifier::PC),
-		s => Ok(Identifier::Operand(parse_operand(s)?)),
+		_ => Ok(Identifier::Number(parse_number(s)?)),
 	}
 }
 
@@ -507,18 +533,18 @@ fn test_parse_label() {
 }
 
 #[test]
-fn test_parse_assignment() {
-	let label = Label {
-		lvalue: Identifier::Operand(Operand::Label(String::from("HEJ"))),
-		rvalue: Identifier::Operand(Operand::Value(0x1234)),
+fn test_parse_label_assignment() {
+	let label = LabelAssignment {
+		lvalue: String::from("HEJ"),
+		rvalue: Identifier::Number(0x1234),
 	};
 	
-	assert_eq!(parse_assignment("HEJ = $1234").unwrap(), label);
-	assert_eq!(parse_assignment("HEJ =$1234").unwrap(), label);
-	assert_eq!(parse_assignment("HEJ= $1234").unwrap(), label);
-	assert_eq!(parse_assignment("HEJ=$1234").unwrap(), label);
-	assert!(parse_assignment("HEJ=").is_err());
-	assert!(parse_assignment("=$1234").is_err());
+	assert_eq!(parse_label_assignment("HEJ = $1234").unwrap(), label);
+	assert_eq!(parse_label_assignment("HEJ =$1234").unwrap(), label);
+	assert_eq!(parse_label_assignment("HEJ= $1234").unwrap(), label);
+	assert_eq!(parse_label_assignment("HEJ=$1234").unwrap(), label);
+	assert!(parse_label_assignment("HEJ=").is_err());
+	assert!(parse_label_assignment("=$1234").is_err());
 }
 
 #[test]
