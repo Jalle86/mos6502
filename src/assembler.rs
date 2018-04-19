@@ -186,40 +186,54 @@ fn pass1<R>(mut reader: R) -> AsmResult<ParsedData>
 		let bytes = reader
 		.read_line(&mut line)
 		.map_err(|_| AsmError::IOError)?;
+		if bytes == 0 {
+			break;
+		}
 
-		match bytes {
-			0 => break,
-			_ => {
-				if line.contains("=") {
-					let assignment = parse_label_assignment(&line)?;
-					let identifier = evaluate_identifier(assignment.rvalue, &parsed_data.symtab);
-					parsed_data.symtab.insert(assignment.lvalue, identifier);
+		line = format_line(line);
 
-					continue;
-				}
+		if line.chars().count() == 0 {
+			continue;
+		}
 
-				let (label, rest) = split_at_label(line);
-				if let Some(label_text) = label {
-					let pc = parsed_data.symtab.location_counter;
-					parsed_data.symtab.insert(label_text, pc);
-				}
+		let (label, rest) = split_at_label(line);
+		if let Some(label_text) = label {
+			let pc = parsed_data.symtab.location_counter;
+			parsed_data.symtab.insert(label_text, pc);
+		}
 
-				let line = parse_line(rest)?;
+		if rest.is_empty() {
+			continue;
+		}
 
-				match line {
-					Line::Instruction(ref instr) => parsed_data.symtab.increment_counter(
-						instruction_length(&instr.addr_mode)),
-					Line::Pragma(Pragma::Byte(_)) => parsed_data.symtab.increment_counter(1),
-					Line::Pragma(Pragma::Word(_)) => parsed_data.symtab.increment_counter(2),
-					Line::Pragma(Pragma::End) => (),
-				}
+		if rest.contains("=") {
+			let assignment = parse_label_assignment(&rest)?;
+			let identifier = evaluate_identifier(assignment.rvalue, &parsed_data.symtab);
+			parsed_data.symtab.insert(assignment.lvalue, identifier);
+		}
+		else {
+			let line = parse_line(rest)?;
 
-				parsed_data.lines.push(line);
-			},
+			if let Line::Pragma(Pragma::End) = line {
+				return Ok(parsed_data);
+			}
+
+			let increment = evalute_increment(&line);
+			parsed_data.lines.push(line);
+			parsed_data.symtab.increment_counter(increment);
 		}
 	}
 
 	Ok(parsed_data)
+}
+
+fn format_line(line: String) -> String {
+	line.to_uppercase()
+		.trim()
+		.replace(r"\s+"," ")
+		.chars()
+		.take_while(|c| *c != ';')
+		.collect::<String>()
 }
 
 fn evaluate_identifier(identifier: Identifier, symtab: &SymTab) -> usize {
@@ -229,10 +243,13 @@ fn evaluate_identifier(identifier: Identifier, symtab: &SymTab) -> usize {
 	}
 }
 
-fn format_line(line: String) -> String {
-	line.to_uppercase()
-		.trim()
-		.replace(r"\s+"," ")
+fn evalute_increment(line: &Line) -> usize {
+	match *line {
+		Line::Instruction(ref instr) => instruction_length(&instr.addr_mode),
+		Line::Pragma(Pragma::Byte(_)) => 1,
+		Line::Pragma(Pragma::Word(_)) => 2,
+		Line::Pragma(Pragma::End) => panic!(),
+	}
 }
 
 fn parse_line(line: String) -> AsmResult<Line>{
@@ -245,7 +262,7 @@ fn parse_line(line: String) -> AsmResult<Line>{
 			Ok(Line::Pragma(line))
 		}
 		Some(_) => {
-			let line = instruction_line(chars.collect::<String>())?;
+			let line = parse_instruction_line(chars.collect::<String>())?;
 			Ok(Line::Instruction(line))
 		}
 		None => panic!(),
@@ -273,7 +290,7 @@ fn parse_word(s: &str) -> AsmResult<Pragma> {
 	Ok(Pragma::Word(op))
 }
 
-fn instruction_line(s: String) -> AsmResult<Instruction> {
+fn parse_instruction_line(s: String) -> AsmResult<Instruction> {
 	let (operation_text, addr_mode_text) = split_at_first(&s, ' ');
 
 	let operation = parse_opcode(&operation_text)?;
@@ -619,11 +636,31 @@ fn test_pragma_word() {
 
 #[test]
 fn test_instruction() {
-	assert_eq!(instruction_line(String::from("ADC #$1234")).unwrap(),
+	assert_eq!(parse_instruction_line(String::from("ADC #$1234")).unwrap(),
 		Instruction {
 			operation: Operation::ADC,
 			addr_mode: AddrMode::Immediate(Operand::Value(0x1234))
 		});
+}
+
+#[test]
+fn test_source() {
+	use std::io::Cursor;
+
+	let source = 
+		"*=$c000\n
+		LDX #0\n
+		Label1: TXA\n
+		STA $0400,X\n
+		LDA #1\n
+		STA $D800,X\n
+		INX BNE\n
+		Label1: RTS\n
+		.END";
+	
+	let cursor = Cursor::new(source);
+	let parsed_data = pass1(cursor).unwrap();
+	assert!(parsed_data.symtab.get("LABEL1").is_some());
 }
 
 fn assert_addr_mode(s: &str, addr_mode: AddrMode) {
