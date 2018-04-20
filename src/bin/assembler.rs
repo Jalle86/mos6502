@@ -146,14 +146,14 @@ impl SymTab {
 	}
 
 	fn add_label(&mut self, label: String, value: usize) -> AsmResult<()> {
-	if !self.contains(&label) {
-		self.insert(label, value);
-		Ok(())
+		if !self.contains(&label) {
+			self.insert(label, value);
+			Ok(())
+		}
+		else {
+			Err(AsmError::LabelAlreadyExists)
+		}
 	}
-	else {
-		Err(AsmError::LabelAlreadyExists)
-	}
-}
 }
 
 /*fn optab_adc(addr_mode: AddrMode, symtab: SymTab) -> AsmResult<usize> {
@@ -176,6 +176,24 @@ fn parse_addr_mode(op: Operation, s: &str) -> AsmResult<AddrMode> {
 		Operation::ADC => parse_addr_mode_adc(s)
 	}
 }*/
+
+fn main() {
+	use std::io::Cursor;
+
+	let source = 
+		"*=$c000\n
+LDX #0\n
+Label1: TXA\n0
+STA $0400,X\n
+LDA #1\n
+STA $D800,X\n
+INX BNE\n
+Label2: RTS\n
+.END";
+	
+	let cursor = Cursor::new(source);
+	pass1(cursor);
+}
 
 fn pass1<R>(mut reader: R) -> AsmResult<ParsedData>
 	where R: BufRead {
@@ -445,12 +463,20 @@ fn parse_operand(s: &str) -> AsmResult<Operand> {
 
 fn parse_label(s: &str) -> AsmResult<String> {
 	let regex = Regex::new(LABEL_REGEX).unwrap();
-	regex
+	let label = regex
 		.captures(s)
 		.and_then(|c| c.name("label"))
 		.map(|m| m.as_str().to_string())
 		.and_then(filter_opcode)
-		.ok_or(AsmError::InvalidLabelName)
+		.ok_or(AsmError::InvalidLabelName)?;
+
+		// no keywords
+		if parse_opcode(label).is_ok() {
+			Err(AsmError::InvalidLabelName)
+		}
+		else {
+			Ok(label)
+		}
 }
 
 fn filter_opcode(s: String) -> Option<String> {
@@ -655,12 +681,14 @@ fn test_source() {
 		LDA #1\n
 		STA $D800,X\n
 		INX BNE\n
-		Label1: RTS\n
+		Label2: RTS\n
 		.END";
 	
 	let cursor = Cursor::new(source);
+
 	let parsed_data = pass1(cursor).unwrap();
-	assert!(parsed_data.symtab.get("LABEL1").is_some());
+	
+	assert!(parsed_data.symtab.get("LABEL2").is_some());
 }
 
 fn assert_addr_mode(s: &str, addr_mode: AddrMode) {
