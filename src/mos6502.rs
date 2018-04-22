@@ -358,7 +358,7 @@ impl Mos6502 {
 
 			0x68 | 0x28 => 4,
 
-			x => panic!(format!("Invalid opcode in instr_len: {}", opcode)),
+			_ => panic!(format!("Invalid opcode in instr_len: {}", opcode)),
 		}
 	}
 

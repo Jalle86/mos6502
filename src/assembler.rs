@@ -2,10 +2,11 @@ extern crate regex;
 
 use std::collections::HashMap;
 use self::regex::*;
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 
 type AsmResult<T> = Result<T, AsmError>;
 type Lines = Vec<Line>;
+type Bytes = Vec<u8>;
 
 static LABEL_REGEX: &'static str = r"^(?P<label>([A-Z][A-Z0-9]*)|\*)$";
 static NUM_REGEX: &'static str = r"^P<num>[\$%O]?[0-9A-F]+";
@@ -25,6 +26,11 @@ enum AsmError {
 	InvalidInstruction,
 	InvalidPragma,
 	IOError,
+	UndefinedLabel,
+	WordOverflow,
+	ByteOverflow,
+	BufferWriteOverflow,
+	BufferWriteError,
 }
 
 #[derive(Debug, PartialEq)]
@@ -57,6 +63,7 @@ enum AddrMode {
 	ZeroPageY(Operand),
 }
 
+#[derive(Debug)]
 struct ParsedData {
 	symtab:	SymTab,
 	lines:	Lines,
@@ -99,6 +106,7 @@ enum Line {
 	Instruction(Instruction),
 }
 
+#[derive(Debug)]
 struct SymTab {
 	tab:				HashMap<String, usize>,
 	location_counter:	usize,
@@ -146,7 +154,11 @@ impl SymTab {
 	}
 
 	fn add_label(&mut self, label: String, value: usize) -> AsmResult<()> {
-		if !self.contains(&label) {
+		if label == "*" {
+			self.location_counter = value;
+			Ok(())
+		}
+		else if !self.contains(&label) {
 			self.insert(label, value);
 			Ok(())
 		}
@@ -156,93 +168,223 @@ impl SymTab {
 	}
 }
 
-/*fn optab_adc(addr_mode: AddrMode, symtab: SymTab) -> AsmResult<usize> {
+/*fn optab(instruction: Instruction, symtab: &SymTab) -> AsmResult<Bytes> {
+	let tab = match instruction.operation {
+		Operation::ADC => optab_adc,
+		_=> panic!(),
+	};
 
-	match addr_mode {
-		AddrMode::Immediate(_)	=> Ok(0x69),
-		AddrMode::ZeroPage(_)	=> Ok(0x65),
-		AddrMode::ZeroPageX(_)	=> Ok(0x75),
-		AddrMode::Absolute(_)	=> Ok(0x6D),
-		AddrMode::AbsoluteX(_)	=> Ok(0x7D),
-		AddrMode::AbsoluteY(_)	=> Ok(0x79),
-		AddrMode::IndirectX(_)	=> Ok(0x61),
-		AddrMode::IndirectY(_)	=> Ok(0x71),
-		_ 						=> Err(AsmError::InvalidAddrMode),
-	}
-}
-
-fn parse_addr_mode(op: Operation, s: &str) -> AsmResult<AddrMode> {
-	match op {
-		Operation::ADC => parse_addr_mode_adc(s)
-	}
+	tab(instruction.addr_mode, symtab)
 }*/
 
-fn main() {
-	use std::io::Cursor;
+fn pass2<W: Write>(writer: &mut W, parsed_data: ParsedData) {
 
-	let source = 
-		"*=$c000\n
-LDX #0\n
-Label1: TXA\n0
-STA $0400,X\n
-LDA #1\n
-STA $D800,X\n
-INX BNE\n
-Label2: RTS\n
-.END";
-	
-	let cursor = Cursor::new(source);
-	pass1(cursor);
 }
 
-fn pass1<R>(mut reader: R) -> AsmResult<ParsedData>
-	where R: BufRead {
+fn write_line<W: Write>(writer: &mut W, line: Line, symtab: &SymTab) -> AsmResult<()> {
+	match line {
+		Line::Instruction(instruction)	=> write_instruction(writer, instruction, symtab),
+		Line::Pragma(pragma)			=> write_pragma(writer, pragma, symtab),
+	}
+}
+
+fn write_pragma<W: Write>(writer: &mut W, pragma: Pragma, symtab: &SymTab) -> AsmResult<()> {
+	match pragma {
+		Pragma::Byte(op) => write_byte(writer, expect_byte(op, symtab)?),
+		Pragma::Word(op) => write_word(writer, expect_word(op, symtab)?),
+		_ => panic!(),
+	}
+}
+
+fn write_instruction<W: Write>(writer: &mut W, instruction: Instruction, symtab: &SymTab)
+	-> AsmResult<()> {
+	
+	write_opcode(writer, &instruction)?;
+	write_addr_mode(writer, instruction.addr_mode, symtab)?;
+	Ok(())
+}
+
+fn write_opcode<W: Write>(writer: &mut W, instruction: &Instruction) -> AsmResult<()> {
+	write_byte(writer, optab(&instruction)?)?;
+	Ok(())
+}
+
+fn optab(instruction: &Instruction) -> AsmResult<u8> {
+	use self::Operation::*;
+
+	let instr = match instruction.operation {
+		ADC => optab_adc,
+		_ => panic!(),
+	};
+
+	instr(&instruction.addr_mode)
+}
+
+fn optab_adc(addr_mode: &AddrMode)
+	-> AsmResult<u8> {
+	use self::AddrMode::*;
+	match *addr_mode {
+		Immediate(_)	=> Ok(0x69),
+		ZeroPage(_)		=> Ok(0x65),
+		ZeroPageX(_)	=> Ok(0x75),
+		Absolute(_)		=> Ok(0x6D),
+		AbsoluteX(_)	=> Ok(0x7D),
+		AbsoluteY(_)	=> Ok(0x79),
+		IndirectX(_)	=> Ok(0x61),
+		IndirectY(_)	=> Ok(0x71),
+		_ 				=> Err(AsmError::InvalidAddrMode),
+	}
+}
+
+fn write_addr_mode<W: Write>(writer: &mut W, addr_mode: AddrMode, symtab: &SymTab)
+	-> AsmResult<()> {
+	use self::AddrMode::*;
+
+	let write_op_word = |w, o, s| write_word(w, expect_word(o, s)?);
+	let write_op_byte = |w, o, s| write_word(w, expect_word(o, s)?);
+
+	match addr_mode {
+		Absolute(op)	| AbsoluteX(op)	| AbsoluteY(op)
+			=> write_op_word(writer, op, symtab),
+
+		Immediate(op)	| Indirect(op)	| IndirectX(op)	| Relative(op)	| ZeroPage(op)	|
+		ZeroPageX(op)	| ZeroPageY(op)
+			=> write_op_byte(writer, op, symtab),
+
+		_ => Ok(()),
+	}
+}
+
+fn write_byte<W: Write>(writer: &mut W, byte: u8) -> AsmResult<()> {
+	let bytes_written = writer.write(&[byte]);
+	match bytes_written {
+		Ok(n) if n < 1 => Err(AsmError::BufferWriteOverflow),
+		Ok(_) => Ok(()),
+		Err(_) => Err(AsmError::BufferWriteError),
+	}
+}
+
+fn write_word<W: Write>(writer: &mut W, word: u16) -> AsmResult<()> {
+	let bytes : [u8; 2] = [ word as u8, (word >> 8) as u8 ];
+	let bytes_written = writer.write(&bytes);
+
+	match bytes_written {
+		Ok(n) if n < 2 => Err(AsmError::BufferWriteOverflow),
+		Ok(_) => Ok(()),
+		Err(_) => Err(AsmError::BufferWriteError),
+	}
+}
+
+fn expect_byte(op: Operand, symtab: &SymTab) -> AsmResult<u8> {
+	use std::u8;
+
+	let value = evaluate_operand(op, symtab)?;
+	if value <= u8::MAX as usize {
+		Ok(value as u8)
+	}
+	else {
+		Err(AsmError::ByteOverflow)
+	}
+}
+
+fn expect_word(op: Operand, symtab: &SymTab) -> AsmResult<u16> {
+	use std::u16;
+
+	let value = evaluate_operand(op, symtab)?;
+	if value <= u16::MAX as usize {
+		Ok(value as u16)
+	}
+	else {
+		Err(AsmError::WordOverflow)
+	}
+}
+
+fn evaluate_operand(op: Operand, symtab: &SymTab) -> AsmResult<usize> {
+	match op {
+		Operand::Value(n) => Ok(n),
+		Operand::Label(label) => Ok(
+			*symtab
+			.get(&label)
+			.ok_or(AsmError::UndefinedLabel)?),
+	}
+}
+
+fn pass1<R: BufRead>(mut reader: R) -> AsmResult<ParsedData> {
 	let mut parsed_data = ParsedData::new();
 
 	loop {
-		let mut line = String::new();
-		let bytes = reader
-		.read_line(&mut line)
-		.map_err(|_| AsmError::IOError)?;
-		if bytes == 0 {
-			break;
-		}
+		let line = match read_line(&mut reader)? {
+			None => break,
+			Some(line) => line,
+		};
 
-		line = format_line(line);
-
-		if line.chars().count() == 0 {
+		if line.is_empty() {
 			continue;
 		}
 
 		let (label, rest) = split_at_label(line);
-		if let Some(label_text) = label {
-			let pc = parsed_data.symtab.location_counter;
-			parsed_data.symtab.insert(label_text, pc);
-		}
+		add_label(label, &mut parsed_data.symtab)?;
 
 		if rest.is_empty() {
 			continue;
 		}
-
-		if rest.contains("=") {
-			let assignment = parse_label_assignment(&rest)?;
-			let identifier = evaluate_identifier(assignment.rvalue, &parsed_data.symtab);
-			parsed_data.symtab.insert(assignment.lvalue, identifier);
+		else if rest.contains("=") {
+			add_label_from_assignment(&rest, &mut parsed_data.symtab)?;
 		}
 		else {
-			let line = parse_line(rest)?;
-
-			if let Line::Pragma(Pragma::End) = line {
-				return Ok(parsed_data);
+			let stop = parse_codedata(rest, &mut parsed_data)?;
+			if stop {
+				break;
 			}
-
-			let increment = evalute_increment(&line);
-			parsed_data.lines.push(line);
-			parsed_data.symtab.increment_counter(increment);
 		}
 	}
 
 	Ok(parsed_data)
+}
+
+fn read_line<R: BufRead>(reader: &mut R) -> AsmResult<Option<String>> {
+		let mut line = String::new();
+		let bytes = reader
+		.read_line(&mut line)
+		.map_err(|_| AsmError::IOError)?;
+
+		if bytes == 0 {
+			Ok(None) // EOF reached
+		}
+		else {
+			Ok(Some(format_line(line)))
+		}
+}
+
+fn add_label(label: Option<String>, symtab: &mut SymTab) -> AsmResult<()> {
+	if let Some(label_text) = label {
+		let pc = symtab.location_counter;
+		symtab.add_label(label_text, pc)?;
+	}
+
+	Ok(())
+}
+
+fn add_label_from_assignment(s: &str, symtab: &mut SymTab) -> AsmResult<()> {
+	let assignment = parse_label_assignment(s)?;
+	let identifier = evaluate_identifier(assignment.rvalue, symtab);
+	symtab.add_label(assignment.lvalue, identifier)?;
+
+	Ok(())
+}
+
+fn parse_codedata(s: String, parsed_data: &mut ParsedData) -> AsmResult<bool> {
+	let line = parse_line(s)?;
+
+	if let Line::Pragma(Pragma::End) = line {
+		return Ok(true);
+	}
+
+	let increment = evalute_increment(&line);
+	parsed_data.lines.push(line);
+	parsed_data.symtab.increment_counter(increment);
+
+	Ok(false)
 }
 
 fn format_line(line: String) -> String {
@@ -471,7 +613,7 @@ fn parse_label(s: &str) -> AsmResult<String> {
 		.ok_or(AsmError::InvalidLabelName)?;
 
 		// no keywords
-		if parse_opcode(label).is_ok() {
+		if parse_opcode(&label).is_ok() {
 			Err(AsmError::InvalidLabelName)
 		}
 		else {
@@ -522,16 +664,6 @@ fn parse_decimal(s: &str) -> AsmResult<usize> {
 	match usize::from_str_radix(s, 10) {
 		Ok(n) => Ok(n),
 		_ => Err(AsmError::InvalidDecimalNumber),
-	}
-}
-
-fn add_label(label: String, symtab: &mut SymTab) -> AsmResult<()> {
-	if !symtab.contains(&label) {
-		symtab.insert_at_counter(label);
-		Ok(())
-	}
-	else {
-		Err(AsmError::LabelAlreadyExists)
 	}
 }
 
@@ -680,15 +812,39 @@ fn test_source() {
 		STA $0400,X\n
 		LDA #1\n
 		STA $D800,X\n
-		INX BNE\n
-		Label2: RTS\n
+		Label2: INX\n
+		BNE Label1\n
+		RTS\n
 		.END";
 	
 	let cursor = Cursor::new(source);
 
-	let parsed_data = pass1(cursor).unwrap();
+	let parsed_data = pass1(cursor);
 	
-	assert!(parsed_data.symtab.get("LABEL2").is_some());
+	assert!(parsed_data.is_ok());
+}
+
+#[test]
+fn test_source_fail() {
+	use std::io::Cursor;
+
+	let source = 
+		"*=$c000\n
+		LDX #0\n
+		Label1: TXA\n
+		STA $0400,X\n
+		LDA #1\n
+		STA $D800,X\n
+		Label1: INX\n
+		BNE Label1\n
+		RTS\n
+		.END";
+	
+	let cursor = Cursor::new(source);
+
+	let parsed_data = pass1(cursor);
+	
+	assert!(parsed_data.is_err());
 }
 
 fn assert_addr_mode(s: &str, addr_mode: AddrMode) {
