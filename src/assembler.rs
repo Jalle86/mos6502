@@ -177,8 +177,12 @@ impl SymTab {
 	tab(instruction.addr_mode, symtab)
 }*/
 
-fn pass2<W: Write>(writer: &mut W, parsed_data: ParsedData) {
+fn pass2<W: Write>(writer: &mut W, parsed_data: ParsedData) -> AsmResult<()> {
+	for line in parsed_data.lines {
+		write_line(writer, line, &parsed_data.symtab)?;
+	}
 
+	Ok(())
 }
 
 fn write_line<W: Write>(writer: &mut W, line: Line, symtab: &SymTab) -> AsmResult<()> {
@@ -211,17 +215,20 @@ fn write_opcode<W: Write>(writer: &mut W, instruction: &Instruction) -> AsmResul
 
 fn optab(instruction: &Instruction) -> AsmResult<u8> {
 	use self::Operation::*;
+	use self::AddrMode::*;
 
-	let instr = match instruction.operation {
-		ADC => optab_adc,
-		_ => panic!(),
-	};
+	match (instruction.operation, instruction.addr_mode) {
+		(ADC, Immediate(_))	=> Ok(0x69),		(ADC, ZeroPage(_))	=> Ok(0x65),
+		(ADC, ZeroPageX(_))	=> Ok(0x75),		(ADC, Absolute(_))	=> Ok(0x6D),
+		(ADC, AbsoluteX(_))	=> Ok(0x7D),		(ADC, AbsoluteY(_))	=> Ok(0x79),
+		(ADC, IndirectX(_))	=> Ok(0x61),		(ADC, IndirectY(_))	=> Ok(0x71),
 
-	instr(&instruction.addr_mode)
+		
+		_ => Err(AsmError::InvalidAddrMode),
+	}
 }
 
-fn optab_adc(addr_mode: &AddrMode)
-	-> AsmResult<u8> {
+fn optab_adc(addr_mode: &AddrMode) -> AsmResult<u8> {
 	use self::AddrMode::*;
 	match *addr_mode {
 		Immediate(_)	=> Ok(0x69),
@@ -233,6 +240,167 @@ fn optab_adc(addr_mode: &AddrMode)
 		IndirectX(_)	=> Ok(0x61),
 		IndirectY(_)	=> Ok(0x71),
 		_ 				=> Err(AsmError::InvalidAddrMode),
+	}
+}
+
+fn optab_and(addr_mode: &AddrMode) -> AsmResult<u8> {
+	use self::AddrMode::*;
+	match *addr_mode {
+		Immediate(_)	=> Ok(0x29),
+		ZeroPage(_)		=> Ok(0x25),
+		ZeroPageX(_)	=> Ok(0x35),
+		Absolute(_)		=> Ok(0x2D),
+		AbsoluteX(_)	=> Ok(0x3D),
+		AbsoluteY(_)	=> Ok(0x39),
+		IndirectX(_)	=> Ok(0x21),
+		IndirectY(_)	=> Ok(0x31),
+		_ 				=> Err(AsmError::InvalidAddrMode),
+	}
+}
+
+fn optab_asl(addr_mode: &AddrMode) -> AsmResult<u8> {
+	use self::AddrMode::*;
+	match *addr_mode {
+		Accumulator		=> Ok(0x0A),
+		ZeroPage(_)		=> Ok(0x06),
+		ZeroPageX(_)	=> Ok(0x16),
+		Absolute(_)		=> Ok(0x0E),
+		AbsoluteX(_)	=> Ok(0x1E),
+		_				=> Err(AsmError::InvalidAddrMode),
+	}
+}
+
+fn optab_bcc(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Relative(_) = *addr_mode {
+		Ok(0x90)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_bcs(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Relative(_) = *addr_mode {
+		Ok(0xB0)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_beq(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Relative(_) = *addr_mode {
+		Ok(0xF0)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_bit(addr_mode: &AddrMode) -> AsmResult<u8> {
+	use self::AddrMode::*;
+	match *addr_mode {
+		ZeroPage(_)	=> Ok(0x24),
+		Absolute(_) => Ok(0x2C),
+		_			=> Err(AsmError::InvalidAddrMode),
+	}
+}
+
+fn optab_bmi(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Relative(_) = *addr_mode {
+		Ok(0x30)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_bne(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Relative(_) = *addr_mode {
+		Ok(0xD0)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_bpl(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Relative(_) = *addr_mode {
+		Ok(0x10)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_brk(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Implied = *addr_mode {
+		Ok(0x00)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_bvc(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Relative(_) = *addr_mode {
+		Ok(0x50)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_bvs(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Relative(_) = *addr_mode {
+		Ok(0x70)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_clc(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Implied = *addr_mode {
+		Ok(0x18)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_cld(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Implied = *addr_mode {
+		Ok(0xD8)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_cli(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Implied = *addr_mode {
+		Ok(0x58)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_clv(addr_mode: &AddrMode) -> AsmResult<u8> {
+	if let AddrMode::Implied = *addr_mode {
+		Ok(0xB8)
+	}
+	else {
+		Err(AsmError::InvalidAddrMode)
+	}
+}
+
+fn optab_cmp(addr_mode: &AddrMode) -> AsmResult<u8> {
+	use self::AddrMode::*;
+	match *addr_mode {
+		Immediate(_) => Ok(0xC9),
+
 	}
 }
 
