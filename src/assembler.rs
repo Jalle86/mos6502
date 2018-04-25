@@ -33,14 +33,14 @@ enum AsmError {
 	BufferWriteError,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Operation {
 	ADC, AND, ASL, BCC, BCS, BEQ, BIT, BMI, BNE, BPL, BRK, BVC, BVS, CLC, CLD, CLI, CLV, CMP, CPX,
 	CPY, DEC, DEX, DEY, EOR, INC, INX, INY, JMP, JSR, LDA, LDY, LDX, LSR, NOP, ORA, PHA, PHP, PLA,
 	PLP, ROL, ROR, RTI, RTS, SBC, SEC, SED, SEI, STA, STX, STY, TAX, TAY, TSX, TXA, TXS, TYA,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum AddrMode {
 	Absolute(Operand),
 	AbsoluteX(Operand),
@@ -87,7 +87,7 @@ enum Identifier {
 	PC
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Operand {
 	Label(String),
 	Value(usize),
@@ -98,6 +98,7 @@ enum Pragma {
 	Byte(Operand),
 	Word(Operand),
 	End,
+	LocationCounter(usize),
 }
 
 #[derive(Debug, PartialEq)]
@@ -208,7 +209,7 @@ fn optab(instruction: &Instruction) -> AsmResult<u8> {
 	use self::Operation::*;
 	use self::AddrMode::*;
 
-	match (*instruction.operation, *instruction.addr_mode) {
+	match (instruction.operation.clone(), instruction.addr_mode.clone()) {
 		(ADC, Immediate(_))	=> Ok(0x69),	(ADC, ZeroPage(_))	=> Ok(0x65),
 		(ADC, ZeroPageX(_))	=> Ok(0x75),	(ADC, Absolute(_))	=> Ok(0x6D),
 		(ADC, AbsoluteX(_))	=> Ok(0x7D),	(ADC, AbsoluteY(_))	=> Ok(0x79),
@@ -459,6 +460,12 @@ fn pass1<R: BufRead>(mut reader: R) -> AsmResult<ParsedData> {
 		if rest.is_empty() {
 			continue;
 		}
+		else if rest.chars().skip_while(|c| *c != ' ').eq(String::from("*=").chars()) {
+			let (_, pc) = split_at_first(&rest, '=');
+			let pc_evaluated = parse_number(&pc)?;
+			parsed_data.symtab.location_counter = pc_evaluated;
+			parsed_data.lines.push(Line::Pragma(Pragma::LocationCounter(pc_evaluated)));
+		}
 		else if rest.contains("=") {
 			add_label_from_assignment(&rest, &mut parsed_data.symtab)?;
 		}
@@ -539,6 +546,7 @@ fn evalute_increment(line: &Line) -> usize {
 		Line::Instruction(ref instr) => instruction_length(&instr.addr_mode),
 		Line::Pragma(Pragma::Byte(_)) => 1,
 		Line::Pragma(Pragma::Word(_)) => 2,
+		Line::Pragma(Pragma::LocationCounter(_)) => 0,
 		Line::Pragma(Pragma::End) => panic!(),
 	}
 }
