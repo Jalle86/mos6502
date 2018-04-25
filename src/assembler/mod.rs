@@ -11,6 +11,8 @@ type Bytes = Vec<u8>;
 static LABEL_REGEX: &'static str = r"^(?P<label>([A-Z][A-Z0-9]*)|\*)$";
 static NUM_REGEX: &'static str = r"^P<num>[\$%O]?[0-9A-F]+";
 
+mod parse;
+
 #[derive(Debug, PartialEq)]
 enum AsmError {
 	InvalidNumberFormat,
@@ -984,6 +986,17 @@ fn test_source_fail() {
 	let parsed_data = pass1(cursor);
 	
 	assert!(parsed_data.is_err());
+}
+
+#[test]
+fn test_source_pc() {
+	use std::io::Cursor;
+
+	let source = "*=$2000";
+	let cursor = Cursor::new(source);
+	let parsed_data = pass1(cursor).unwrap();
+
+	assert_eq!(parsed_data.symtab.location_counter, 0x2000);
 }
 
 fn assert_addr_mode(s: &str, addr_mode: AddrMode) {
