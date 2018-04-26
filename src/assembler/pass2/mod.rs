@@ -1,7 +1,7 @@
 use super::*;
-use std::io::Write;
+use std::io::{Write, Seek, SeekFrom};
 
-fn pass2<W: Write>(writer: &mut W, parsed_data: ParsedData) -> AsmResult<()> {
+pub(super) fn pass2<W: Write + Seek>(writer: &mut W, parsed_data: ParsedData) -> AsmResult<()> {
 	for line in parsed_data.lines {
 		write_line(writer, line, &parsed_data.symtab)?;
 	}
@@ -9,19 +9,25 @@ fn pass2<W: Write>(writer: &mut W, parsed_data: ParsedData) -> AsmResult<()> {
 	Ok(())
 }
 
-fn write_line<W: Write>(writer: &mut W, line: Line, symtab: &SymTab) -> AsmResult<()> {
+fn write_line<W: Write + Seek>(writer: &mut W, line: Line, symtab: &SymTab) -> AsmResult<()> {
 	match line {
 		Line::Instruction(instruction)	=> write_instruction(writer, instruction, symtab),
 		Line::Pragma(pragma)			=> write_pragma(writer, pragma, symtab),
 	}
 }
 
-fn write_pragma<W: Write>(writer: &mut W, pragma: Pragma, symtab: &SymTab) -> AsmResult<()> {
+fn write_pragma<W: Write + Seek>(writer: &mut W, pragma: Pragma, symtab: &SymTab) -> AsmResult<()> {
 	match pragma {
 		Pragma::Byte(op) => write_byte(writer, expect_byte(op, symtab)?),
 		Pragma::Word(op) => write_word(writer, expect_word(op, symtab)?),
+		Pragma::LocationCounter(n) => set_location_counter(writer, n),
 		_ => panic!(),
 	}
+}
+
+fn set_location_counter<W: Write + Seek>(writer: &mut W, n: usize) -> AsmResult<()> {
+	writer.seek(SeekFrom::Start(n as u64)).map_err(|_| AsmError::IOError)?;
+	Ok(())
 }
 
 fn write_instruction<W: Write>(writer: &mut W, instruction: Instruction, symtab: &SymTab)

@@ -15,7 +15,7 @@ struct LabelAssignment {
 	rvalue: Identifier,
 }
 
-pub fn pass1<R: BufRead>(mut reader: R) -> AsmResult<ParsedData> {
+pub(super) fn pass1<R: BufRead>(mut reader: R) -> AsmResult<ParsedData> {
 	let mut parsed_data = ParsedData::new();
 
 	loop {

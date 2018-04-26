@@ -5,3 +5,7 @@ authors = ["Jalle <jallek86@gmail.com>"]
 
 [dependencies]
 regex = "0.2"
+
+[[bin]]
+name = "asm6502"
+path = "src/assembler/bin.rs"

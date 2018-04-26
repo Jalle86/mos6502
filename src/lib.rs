@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 mod mos6502;
-mod assembler;
+pub mod assembler;
 
 #[cfg(test)]
 mod tests {

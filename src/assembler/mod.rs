@@ -2,12 +2,14 @@ mod pass1;
 mod pass2;
 
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read, Write};
 
 type AsmResult<T> = Result<T, AsmError>;
 type Lines = Vec<Line>;
 
 #[derive(Debug, PartialEq)]
-pub enum AsmError {
+enum AsmError {
 	InvalidNumberFormat,
 	InvalidBinaryNumber,
 	InvalidHexadecimalNumber,
@@ -59,7 +61,7 @@ enum AddrMode {
 }
 
 #[derive(Debug)]
-pub struct ParsedData {
+struct ParsedData {
 	symtab:	SymTab,
 	lines:	Lines,
 }
@@ -156,4 +158,28 @@ impl SymTab {
 			Err(AsmError::LabelAlreadyExists)
 		}
 	}
+}
+
+pub fn assemble(source_file: &str, output_file: &str) {
+	let mut source = File::open(source_file).expect("File not found");
+	let mut contents = String::new();
+	source.read_to_string(&mut contents).expect("something went wrong reading the file");
+
+	let parsed_data = match pass1::pass1(BufReader::new(source)) {
+		Ok(pd) => pd,
+		Err(_) => panic!(),
+	};
+
+	let buf : &mut [u8] = &mut [0; 65536];
+	let mut cursor = Cursor::new(buf);
+
+	match pass2::pass2(&mut cursor, parsed_data) {
+		Ok(_) => println!("ok :D"),
+		Err(_) => panic!(),
+	};
+
+	File::create(output_file)
+		.expect("Could not create file")
+		.write(cursor.get_ref())
+		.expect("Could not write to file");
 }
