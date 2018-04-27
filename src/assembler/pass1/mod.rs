@@ -34,8 +34,13 @@ pub(super) fn pass1<R: BufRead>(mut reader: R) -> AsmResult<ParsedData> {
 		if rest.is_empty() {
 			continue;
 		}
-		else if rest.chars().skip_while(|c| *c != ' ').eq(String::from("*=").chars()) {
-			let (_, pc) = split_at_first(&rest, '=');
+		else if rest.chars()
+			.skip_while(|c| *c == ' ')
+			.collect::<String>()
+			.starts_with("*=")
+			{
+			let (_, mut pc) = split_at_first(&rest, '=');
+			pc.remove(0); //remove '=' character
 			let pc_evaluated = parse_number(&pc)?;
 			parsed_data.symtab.location_counter = pc_evaluated;
 			parsed_data.lines.push(Line::Pragma(Pragma::LocationCounter(pc_evaluated)));
@@ -100,12 +105,15 @@ fn parse_codedata(s: String, parsed_data: &mut ParsedData) -> AsmResult<bool> {
 }
 
 fn format_line(line: String) -> String {
-	line.to_uppercase()
-		.trim()
-		.replace(r"\s+"," ")
+	let regex = Regex::new(r"\s+").unwrap();
+	let line = regex.replace_all(&line.trim(), " ");
+
+	let wtf = line.to_uppercase()
 		.chars()
 		.take_while(|c| *c != ';')
-		.collect::<String>()
+		.collect::<String>();
+
+	wtf
 }
 
 fn evaluate_identifier(identifier: Identifier, symtab: &SymTab) -> usize {
@@ -169,7 +177,26 @@ fn parse_instruction_line(s: String) -> AsmResult<Instruction> {
 	let operation = parse_opcode(&operation_text)?;
 	let addr_mode = parse_addr_mode(&addr_mode_text.trim())?;
 
-	Ok(Instruction { operation: operation, addr_mode: addr_mode })
+	Ok(apply_relative_addressing(operation, addr_mode))
+}
+
+// Due to absolute and relative addressing being parsed identically it would seem I have had a bit
+// of a tumble. For the appropriate operations the addressing mode should therefore be corrected
+fn apply_relative_addressing(operation: Operation, addr_mode: AddrMode)
+-> Instruction {
+	use self::Operation::*;
+
+	match &operation {
+		&BCC | &BCS | &BEQ | &BMI | &BNE | &BPL | &BVC | &BVS => {
+			if let AddrMode::Absolute(n) = addr_mode {
+				Instruction::new(operation, AddrMode::Relative(n))
+			}
+			else {
+				Instruction::new(operation, addr_mode)
+			}
+		},
+		_ => Instruction::new(operation, addr_mode),
+	}
 }
 
 fn parse_opcode(s: &str) -> AsmResult<Operation> {
