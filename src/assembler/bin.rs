@@ -1,6 +1,8 @@
 extern crate mos6502;
 
 use std::env;
+use std::fs::File;
+use std::io::{Cursor, Read, Write, Seek};
 use mos6502::assembler;
 
 fn main() {
@@ -12,6 +14,55 @@ fn main() {
         panic!("No output file specified.")
     }
     else {
-        assembler::assemble(&args[1], &args[2]);
+        let input_path = &args[1];
+        let output_path = &args[2];
+
+        let mut input_file = File::open(input_path).expect("File not found");
+	    let mut contents = String::new();
+	    input_file.read_to_string(&mut contents).expect("something went wrong reading the file");
+	    let cursor = Cursor::new(contents);
+
+        let output = match assembler::assemble(cursor) {
+            Ok(buf) => buf,
+            Err(e) => panic!("{}", e),
+        };
+
+        print_memory_layout(remove_trailing_zeroes(&output), 20);
+
+        File::create(output_path)
+		    .expect("Could not create file")
+		    .write(&output)
+		    .expect("Could not write to file");
     }
+}
+
+
+fn print_memory_layout(memory: &[u8], bytes_per_column: usize) {
+	let mut column = 0;
+
+	for byte in memory {
+		column += 1;
+		
+		if column == bytes_per_column {
+			println!("{:02X}", byte);
+			column = 0;
+		}
+		else {
+			print!("{:02X} ", byte);
+		}
+	}
+
+	if column != 0 {
+		println!("");
+	}
+}
+
+fn remove_trailing_zeroes(buf: &[u8]) -> &[u8] {
+	for (i, byte) in buf.iter().enumerate().rev() {
+		if *byte != 0 {
+			return &buf[0..i];
+		}
+	};
+
+	&buf[..0]
 }

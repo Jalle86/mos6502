@@ -2,11 +2,12 @@ mod pass1;
 mod pass2;
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Cursor, Read, Write};
+use std::io::{BufRead, Cursor, Write};
 
 type AsmResult<T> = Result<T, AsmError>;
 type Lines = Vec<Line>;
+
+const MEM_SIZE: usize = 65536;
 
 #[derive(Debug, PartialEq)]
 enum AsmError {
@@ -169,57 +170,17 @@ impl Instruction {
 	}
 }
 
-pub fn assemble(source_file: &str, output_file: &str) {
-	let mut source = File::open(source_file).expect("File not found");
-	let mut contents = String::new();
-	source.read_to_string(&mut contents).expect("something went wrong reading the file");
-	let cursor = Cursor::new(contents);
-
-	let parsed_data = match pass1::pass1(cursor) {
+pub fn assemble<R: BufRead>(source: R) -> Result<Box<[u8]>, String> {
+	let parsed_data = match pass1::pass1(source) {
 		Ok(pd) => pd,
 		Err(_) => panic!(),
 	};
 
-	let buf : &mut [u8] = &mut [0; 65536];
+	let mut buf : Box<[u8]> = Box::new([0; MEM_SIZE]);
 	let mut cursor = Cursor::new(buf);
 
 	match pass2::pass2(&mut cursor, parsed_data) {
-		Ok(_) => print_memory_layout(remove_trailing_zeroes(cursor.get_ref()), 10),
-		Err(e) => panic!("{:?}", e),
-	};
-
-	File::create(output_file)
-		.expect("Could not create file")
-		.write(cursor.get_ref())
-		.expect("Could not write to file");
-}
-
-fn remove_trailing_zeroes(buf: &[u8]) -> &[u8] {
-	for (i, byte) in buf.iter().enumerate().rev() {
-		if *byte != 0 {
-			return &buf[0..i];
-		}
-	};
-
-	&buf[..0]
-}
-
-fn print_memory_layout(memory: &[u8], bytes_per_column: usize) {
-	let mut column = 0;
-
-	for byte in memory {
-		column += 1;
-		
-		if column == bytes_per_column {
-			println!("{:02X}", byte);
-			column = 0;
-		}
-		else {
-			print!("{:02X} ", byte);
-		}
-	}
-
-	if column != 0 {
-		println!("");
+		Ok(()) => Ok(cursor.into_inner()),
+		Err(e) => Err(format!("{:?}", e)),
 	}
 }
