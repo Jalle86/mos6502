@@ -2,7 +2,7 @@ extern crate mos6502;
 
 use std::env;
 use std::fs::File;
-use std::io::{Cursor, Read, Write, Seek};
+use std::io::{Cursor, Read, Write};
 use mos6502::assembler;
 
 fn main() {
@@ -27,7 +27,7 @@ fn main() {
             Err(e) => panic!("{}", e),
         };
 
-        print_memory_layout(remove_trailing_zeroes(&output), 20);
+        print_hex_dump(remove_trailing_zeroes(&output), 20);
 
         File::create(output_path)
 		    .expect("Could not create file")
@@ -37,7 +37,7 @@ fn main() {
 }
 
 
-fn print_memory_layout(memory: &[u8], bytes_per_column: usize) {
+fn print_hex_dump(memory: &[u8], bytes_per_column: usize) {
 	let mut column = 0;
 
 	for byte in memory {

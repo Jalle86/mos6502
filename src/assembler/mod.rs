@@ -2,7 +2,7 @@ mod pass1;
 mod pass2;
 
 use std::collections::HashMap;
-use std::io::{BufRead, Cursor, Write};
+use std::io::{BufRead, Cursor};
 
 type AsmResult<T> = Result<T, AsmError>;
 type Lines = Vec<Line>;
@@ -176,7 +176,7 @@ pub fn assemble<R: BufRead>(source: R) -> Result<Box<[u8]>, String> {
 		Err(_) => panic!(),
 	};
 
-	let mut buf : Box<[u8]> = Box::new([0; MEM_SIZE]);
+	let buf : Box<[u8]> = Box::new([0; MEM_SIZE]);
 	let mut cursor = Cursor::new(buf);
 
 	match pass2::pass2(&mut cursor, parsed_data) {

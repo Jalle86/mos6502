@@ -10,7 +10,7 @@
             "request": "launch",
             "name": "RustDebug",
             "program": "${workspaceFolder}/target/debug/asm6502",
-            "args": ["source.asm", "target.trgt"],
+            "args": ["/Users/chrkar/mos6502/src/assembler/test_sources/first.asm", "target.trgt"],
             "cwd": "${workspaceFolder}"
         }
     ]

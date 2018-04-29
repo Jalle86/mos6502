@@ -211,7 +211,7 @@ fn write_addr_mode<W: Write>(writer: &mut W, addr_mode: AddrMode, symtab: &SymTa
 	use self::AddrMode::*;
 
 	let write_op_word = |w, o, s| write_word(w, expect_word(o, s)?);
-	let write_op_byte = |w, o, s| write_word(w, expect_word(o, s)?);
+	let write_op_byte = |w, o, s| write_byte(w, expect_byte(o, s)?);
 
 	match addr_mode {
 		Absolute(op)	| AbsoluteX(op)	| AbsoluteY(op)
@@ -228,7 +228,7 @@ fn write_addr_mode<W: Write>(writer: &mut W, addr_mode: AddrMode, symtab: &SymTa
 fn write_byte<W: Write>(writer: &mut W, byte: u8) -> AsmResult<()> {
 	let bytes_written = writer.write(&[byte]);
 	match bytes_written {
-		Ok(n) if n < 1 => Err(AsmError::BufferWriteOverflow),
+		Ok(n) if n != 1 => Err(AsmError::BufferWriteOverflow),
 		Ok(_) => Ok(()),
 		Err(_) => Err(AsmError::BufferWriteError),
 	}
@@ -239,7 +239,7 @@ fn write_word<W: Write>(writer: &mut W, word: u16) -> AsmResult<()> {
 	let bytes_written = writer.write(&bytes);
 
 	match bytes_written {
-		Ok(n) if n < 2 => Err(AsmError::BufferWriteOverflow),
+		Ok(n) if n != 2 => Err(AsmError::BufferWriteOverflow),
 		Ok(_) => Ok(()),
 		Err(_) => Err(AsmError::BufferWriteError),
 	}
