@@ -4,9 +4,14 @@ use assembler;
 
 static PATH: &'static str = "/Users/chrkar/mos6502/src/assembler/test_sources/";
 
+
 #[test]
 fn test_first() {
-    assert!(test_source("first"))
+    assert_source("first")
+}
+
+fn assert_source(s: &str) {
+    assert!(test_source(s))
 }
 
 fn test_source(path: &str) -> bool {

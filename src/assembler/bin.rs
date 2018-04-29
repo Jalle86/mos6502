@@ -60,7 +60,7 @@ fn print_hex_dump(memory: &[u8], bytes_per_column: usize) {
 fn remove_trailing_zeroes(buf: &[u8]) -> &[u8] {
 	for (i, byte) in buf.iter().enumerate().rev() {
 		if *byte != 0 {
-			return &buf[0..i];
+			return &buf[0..i+1];
 		}
 	};
 
