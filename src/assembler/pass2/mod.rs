@@ -1,45 +1,46 @@
 use super::*;
-use std::io::{Write, Seek, SeekFrom};
+use std::io::{Write, Cursor};
 
-pub(super) fn pass2<W: Write + Seek>(writer: &mut W, parsed_data: ParsedData) -> AsmResult<()> {
+type MemCursor = Cursor<Box<[u8]>>;
+
+pub(super) fn pass2(cursor: &mut MemCursor, parsed_data: ParsedData) -> AsmResult<()> {
 	for line in parsed_data.lines {
-		write_line(writer, line, &parsed_data.symtab)?;
+		write_line(cursor, line, &parsed_data.symtab)?;
 	}
 
 	Ok(())
 }
 
-fn write_line<W: Write + Seek>(writer: &mut W, line: Line, symtab: &SymTab) -> AsmResult<()> {
+fn write_line(cursor: &mut MemCursor, line: Line, symtab: &SymTab) -> AsmResult<()> {
 	match line {
-		Line::Instruction(instruction)	=> write_instruction(writer, instruction, symtab),
-		Line::Pragma(pragma)			=> write_pragma(writer, pragma, symtab),
+		Line::Instruction(instruction)	=> write_instruction(cursor, instruction, symtab),
+		Line::Pragma(pragma)			=> write_pragma(cursor, pragma, symtab),
 	}
 }
 
-fn write_pragma<W: Write + Seek>(writer: &mut W, pragma: Pragma, symtab: &SymTab) -> AsmResult<()> {
+fn write_pragma(cursor: &mut MemCursor, pragma: Pragma, symtab: &SymTab) -> AsmResult<()> {
 	match pragma {
-		Pragma::Byte(op) => write_byte(writer, expect_byte(op, symtab)?),
-		Pragma::Word(op) => write_word(writer, expect_word(op, symtab)?),
-		Pragma::LocationCounter(n) => set_location_counter(writer, n),
-		_ => panic!(),
+		Pragma::Byte(op)			=> write_byte(cursor, expect_byte(op, symtab)?),
+		Pragma::Word(op)			=> write_word(cursor, expect_word(op, symtab)?),
+		Pragma::LocationCounter(n)	=> set_location_counter(cursor, n),
+								_	=> panic!(),
 	}
 }
 
-fn set_location_counter<W: Write + Seek>(writer: &mut W, n: usize) -> AsmResult<()> {
-	writer.seek(SeekFrom::Start(n as u64)).map_err(|_| AsmError::IOError)?;
+fn set_location_counter(cursor: &mut MemCursor, n: usize) -> AsmResult<()> {
+	cursor.set_position(n as u64);
 	Ok(())
 }
 
-fn write_instruction<W: Write>(writer: &mut W, instruction: Instruction, symtab: &SymTab)
-	-> AsmResult<()> {
-	
-	write_opcode(writer, &instruction)?;
-	write_addr_mode(writer, instruction.addr_mode, symtab)?;
+fn write_instruction(cursor: &mut MemCursor, instruction: Instruction, symtab: &SymTab)
+-> AsmResult<()> {
+	write_opcode(cursor, &instruction)?;
+	write_addr_mode(cursor, instruction.addr_mode, symtab)?;
 	Ok(())
 }
 
-fn write_opcode<W: Write>(writer: &mut W, instruction: &Instruction) -> AsmResult<()> {
-	write_byte(writer, optab(&instruction)?)?;
+fn write_opcode(cursor: &mut MemCursor, instruction: &Instruction) -> AsmResult<()> {
+	write_byte(cursor, optab(&instruction)?)?;
 	Ok(())
 }
 
@@ -206,27 +207,26 @@ fn optab(instruction: &Instruction) -> AsmResult<u8> {
 	}
 }
 
-fn write_addr_mode<W: Write>(writer: &mut W, addr_mode: AddrMode, symtab: &SymTab)
-	-> AsmResult<()> {
+fn write_addr_mode(cursor: &mut MemCursor, addr_mode: AddrMode, symtab: &SymTab) -> AsmResult<()> {
 	use self::AddrMode::*;
-
-	let write_op_word = |w, o, s| write_word(w, expect_word(o, s)?);
-	let write_op_byte = |w, o, s| write_byte(w, expect_byte(o, s)?);
 
 	match addr_mode {
 		Absolute(op)	| AbsoluteX(op)	| AbsoluteY(op)
-			=> write_op_word(writer, op, symtab),
+			=> write_word(cursor, expect_word(op, symtab)?),
 
-		Immediate(op)	| Indirect(op)	| IndirectX(op)	| Relative(op)	| ZeroPage(op)	|
+		Immediate(op)	| Indirect(op)	| IndirectX(op)	| IndirectY(op) | ZeroPage(op)	|
 		ZeroPageX(op)	| ZeroPageY(op)
-			=> write_op_byte(writer, op, symtab),
+			=> write_byte(cursor, expect_byte(op, symtab)?),
+		
+		Relative(op)
+			=> write_relative(cursor, expect_byte(op, symtab)?),
 
-		_ => Ok(()),
+		Implied | Accumulator => Ok(()),
 	}
 }
 
-fn write_byte<W: Write>(writer: &mut W, byte: u8) -> AsmResult<()> {
-	let bytes_written = writer.write(&[byte]);
+fn write_byte(cursor: &mut MemCursor, byte: u8) -> AsmResult<()> {
+	let bytes_written = cursor.write(&[byte]);
 	match bytes_written {
 		Ok(n) if n != 1 => Err(AsmError::BufferWriteOverflow),
 		Ok(_) => Ok(()),
@@ -234,7 +234,12 @@ fn write_byte<W: Write>(writer: &mut W, byte: u8) -> AsmResult<()> {
 	}
 }
 
-fn write_word<W: Write>(writer: &mut W, word: u16) -> AsmResult<()> {
+fn write_relative(cursor: &mut MemCursor, byte: u8) -> AsmResult<()> {
+	let offset = byte as isize - cursor.position() as isize - 1;
+	write_byte(cursor, offset as u8)
+}
+
+fn write_word(writer: &mut MemCursor, word: u16) -> AsmResult<()> {
 	let bytes : [u8; 2] = [ word as u8, (word >> 8) as u8 ];
 	let bytes_written = writer.write(&bytes);
 

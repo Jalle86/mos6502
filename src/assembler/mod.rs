@@ -173,7 +173,7 @@ impl Instruction {
 pub fn assemble<R: BufRead>(source: R) -> Result<Box<[u8]>, String> {
 	let parsed_data = match pass1::pass1(source) {
 		Ok(pd) => pd,
-		Err(_) => panic!(),
+		Err(e) => panic!("{:?}", e),
 	};
 
 	let buf : Box<[u8]> = Box::new([0; MEM_SIZE]);
