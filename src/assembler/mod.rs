@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::io::{BufRead, Cursor};
 
 type AsmResult<T> = Result<T, AsmError>;
-type Lines = Vec<Line>;
 
 const MEM_SIZE: usize = 65536;
 
@@ -64,7 +63,7 @@ enum AddrMode {
 #[derive(Debug)]
 struct ParsedData {
 	symtab:	SymTab,
-	lines:	Lines,
+	data:	HashMap<usize, Data>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -94,7 +93,7 @@ enum Pragma {
 }
 
 #[derive(Debug, PartialEq)]
-enum Line {
+enum Data {
 	Pragma(Pragma),
 	Instruction(Instruction),
 }
@@ -109,7 +108,7 @@ impl ParsedData {
 	fn new() -> ParsedData {
 		ParsedData {
 			symtab: SymTab::new(),
-			lines: Lines::new(),
+			data: HashMap::new(),
 		}
 	}
 }

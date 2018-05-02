@@ -16,9 +16,11 @@ struct LabelAssignment {
 }
 
 pub(super) fn pass1<R: BufRead>(mut reader: R) -> AsmResult<ParsedData> {
+	let mut line_number = 0;
 	let mut parsed_data = ParsedData::new();
 
 	loop {
+		line_number += 1;
 		let line = match read_line(&mut reader)? {
 			None => break,
 			Some(line) => line,
@@ -43,13 +45,14 @@ pub(super) fn pass1<R: BufRead>(mut reader: R) -> AsmResult<ParsedData> {
 			pc.remove(0); //remove '=' character
 			let pc_evaluated = parse_number(&pc)?;
 			parsed_data.symtab.location_counter = pc_evaluated;
-			parsed_data.lines.push(Line::Pragma(Pragma::LocationCounter(pc_evaluated)));
+			parsed_data.data.insert(line_number,
+				Data::Pragma(Pragma::LocationCounter(pc_evaluated)));
 		}
 		else if rest.contains("=") {
 			add_label_from_assignment(&rest, &mut parsed_data.symtab)?;
 		}
 		else {
-			let stop = parse_codedata(rest, &mut parsed_data)?;
+			let stop = insert_data(rest, &mut parsed_data, line_number)?;
 			if stop {
 				break;
 			}
@@ -73,6 +76,18 @@ fn read_line<R: BufRead>(reader: &mut R) -> AsmResult<Option<String>> {
 		}
 }
 
+fn format_line(line: String) -> String {
+	let regex = Regex::new(r"\s+").unwrap();
+	let line = regex.replace_all(&line.trim(), " ");
+
+	let wtf = line.to_uppercase()
+		.chars()
+		.take_while(|c| *c != ';')
+		.collect::<String>();
+
+	wtf
+}
+
 fn add_label(label: Option<String>, symtab: &mut SymTab) -> AsmResult<()> {
 	if let Some(label_text) = label {
 		let pc = symtab.location_counter;
@@ -90,31 +105,21 @@ fn add_label_from_assignment(s: &str, symtab: &mut SymTab) -> AsmResult<()> {
 	Ok(())
 }
 
-fn parse_codedata(s: String, parsed_data: &mut ParsedData) -> AsmResult<bool> {
-	let line = parse_line(s)?;
+fn insert_data(s: String, parsed_data: &mut ParsedData, line_number: usize) -> AsmResult<bool> {
+	let data = parse_data(s)?;
 
-	if let Line::Pragma(Pragma::End) = line {
+	if let Data::Pragma(Pragma::End) = data {
 		return Ok(true);
 	}
 
-	let increment = evalute_increment(&line);
-	parsed_data.lines.push(line);
+	let increment = evalute_increment(&data);
+	parsed_data.data.insert(line_number, data);
 	parsed_data.symtab.increment_counter(increment);
 
 	Ok(false)
 }
 
-fn format_line(line: String) -> String {
-	let regex = Regex::new(r"\s+").unwrap();
-	let line = regex.replace_all(&line.trim(), " ");
 
-	let wtf = line.to_uppercase()
-		.chars()
-		.take_while(|c| *c != ';')
-		.collect::<String>();
-
-	wtf
-}
 
 fn evaluate_identifier(identifier: Identifier, symtab: &SymTab) -> usize {
 	match identifier {
@@ -123,28 +128,28 @@ fn evaluate_identifier(identifier: Identifier, symtab: &SymTab) -> usize {
 	}
 }
 
-fn evalute_increment(line: &Line) -> usize {
-	match *line {
-		Line::Instruction(ref instr) => instruction_length(&instr.addr_mode),
-		Line::Pragma(Pragma::Byte(_)) => 1,
-		Line::Pragma(Pragma::Word(_)) => 2,
-		Line::Pragma(Pragma::LocationCounter(_)) => 0,
-		Line::Pragma(Pragma::End) => panic!(),
+fn evalute_increment(data: &Data) -> usize {
+	match *data {
+		Data::Instruction(ref instr) => instruction_length(&instr.addr_mode),
+		Data::Pragma(Pragma::Byte(_)) => 1,
+		Data::Pragma(Pragma::Word(_)) => 2,
+		Data::Pragma(Pragma::LocationCounter(_)) => 0,
+		Data::Pragma(Pragma::End) => panic!(),
 	}
 }
 
-fn parse_line(line: String) -> AsmResult<Line>{
-	let mut chars = line.chars().peekable();
+fn parse_data(data: String) -> AsmResult<Data>{
+	let mut chars = data.chars().peekable();
 
 	match chars.peek() {
 		Some(&'.') => {
 			chars.next();
-			let line = parse_pragma(&chars.collect::<String>())?;
-			Ok(Line::Pragma(line))
+			let pragma = parse_pragma(&chars.collect::<String>())?;
+			Ok(Data::Pragma(pragma))
 		}
 		Some(_) => {
-			let line = parse_instruction_line(chars.collect::<String>())?;
-			Ok(Line::Instruction(line))
+			let instruction = parse_instruction(chars.collect::<String>())?;
+			Ok(Data::Instruction(instruction))
 		}
 		None => panic!(),
 	}
@@ -171,7 +176,7 @@ fn parse_word(s: &str) -> AsmResult<Pragma> {
 	Ok(Pragma::Word(op))
 }
 
-fn parse_instruction_line(s: String) -> AsmResult<Instruction> {
+fn parse_instruction(s: String) -> AsmResult<Instruction> {
 	let (operation_text, addr_mode_text) = split_at_first(&s, ' ');
 
 	let operation = parse_opcode(&operation_text)?;

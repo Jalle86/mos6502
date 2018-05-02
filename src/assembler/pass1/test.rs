@@ -105,7 +105,7 @@ fn test_pragma_word() {
 
 #[test]
 fn test_instruction() {
-	assert_eq!(parse_instruction_line(String::from("ADC #$1234")).unwrap(),
+	assert_eq!(parse_instruction(String::from("ADC #$1234")).unwrap(),
 		Instruction {
 			operation: Operation::ADC,
 			addr_mode: AddrMode::Immediate(Operand::Value(0x1234))

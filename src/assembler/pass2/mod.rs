@@ -4,17 +4,17 @@ use std::io::{Write, Cursor};
 type MemCursor = Cursor<Box<[u8]>>;
 
 pub(super) fn pass2(cursor: &mut MemCursor, parsed_data: ParsedData) -> AsmResult<()> {
-	for line in parsed_data.lines {
-		write_line(cursor, line, &parsed_data.symtab)?;
+	for (line_number, data) in parsed_data.data {
+		write_data(cursor, data, &parsed_data.symtab)?;
 	}
 
 	Ok(())
 }
 
-fn write_line(cursor: &mut MemCursor, line: Line, symtab: &SymTab) -> AsmResult<()> {
-	match line {
-		Line::Instruction(instruction)	=> write_instruction(cursor, instruction, symtab),
-		Line::Pragma(pragma)			=> write_pragma(cursor, pragma, symtab),
+fn write_data(cursor: &mut MemCursor, data: Data, symtab: &SymTab) -> AsmResult<()> {
+	match data {
+		Data::Instruction(instruction)	=> write_instruction(cursor, instruction, symtab),
+		Data::Pragma(pragma)			=> write_pragma(cursor, pragma, symtab),
 	}
 }
 
