@@ -1,10 +1,12 @@
 mod pass1;
 mod pass2;
+mod error_handler;
 
 use std::collections::HashMap;
 use std::io::{BufRead, Cursor};
 
 type AsmResult<T> = Result<T, AsmError>;
+type DetailResult<T> = Result<T, (AsmError, usize)>;
 
 const MEM_SIZE: usize = 65536;
 
@@ -16,8 +18,8 @@ enum AsmError {
 	InvalidOctalNumber,
 	InvalidDecimalNumber,
 	InvalidLabelName,
+	InvalidLabelNameOpcode,
 	LabelAlreadyExists,
-	InvalidAssignment,
 	InvalidOpcode,
 	InvalidAddrMode,
 	InvalidInstruction,
@@ -63,7 +65,7 @@ enum AddrMode {
 #[derive(Debug)]
 struct ParsedData {
 	symtab:	SymTab,
-	data:	HashMap<usize, Data>,
+	data:	Vec<(usize, Data)>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -108,7 +110,7 @@ impl ParsedData {
 	fn new() -> ParsedData {
 		ParsedData {
 			symtab: SymTab::new(),
-			data: HashMap::new(),
+			data: Vec::new(),
 		}
 	}
 }
@@ -172,7 +174,7 @@ impl Instruction {
 pub fn assemble<R: BufRead>(source: R) -> Result<Box<[u8]>, String> {
 	let parsed_data = match pass1::pass1(source) {
 		Ok(pd) => pd,
-		Err(e) => panic!("{:?}", e),
+		Err(e, n) => return error_handler::write_error(e, n),
 	};
 
 	let buf : Box<[u8]> = Box::new([0; MEM_SIZE]);

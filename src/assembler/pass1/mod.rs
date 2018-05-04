@@ -15,47 +15,26 @@ struct LabelAssignment {
 	rvalue: Identifier,
 }
 
-pub(super) fn pass1<R: BufRead>(mut reader: R) -> AsmResult<ParsedData> {
-	let mut line_number = 0;
+pub(super) fn pass1<R: BufRead>(mut reader: R) -> DetailResult<ParsedData> {
 	let mut parsed_data = ParsedData::new();
+	let mut line_number = 0;
 
 	loop {
 		line_number += 1;
-		let line = match read_line(&mut reader)? {
-			None => break,
-			Some(line) => line,
+
+		let line = match read_line(&mut reader) {
+			Err(e) => return Err(e, line_number),
+			Ok(None) => break,
+			Ok(Some(line)) => line,
 		};
 
 		if line.is_empty() {
 			continue;
 		}
 
-		let (label, rest) = split_at_label(line);
-		add_label(label, &mut parsed_data.symtab)?;
-
-		if rest.is_empty() {
-			continue;
-		}
-		else if rest.chars()
-			.skip_while(|c| *c == ' ')
-			.collect::<String>()
-			.starts_with("*=")
-			{
-			let (_, mut pc) = split_at_first(&rest, '=');
-			pc.remove(0); //remove '=' character
-			let pc_evaluated = parse_number(&pc)?;
-			parsed_data.symtab.location_counter = pc_evaluated;
-			parsed_data.data.insert(line_number,
-				Data::Pragma(Pragma::LocationCounter(pc_evaluated)));
-		}
-		else if rest.contains("=") {
-			add_label_from_assignment(&rest, &mut parsed_data.symtab)?;
-		}
-		else {
-			let stop = insert_data(rest, &mut parsed_data, line_number)?;
-			if stop {
-				break;
-			}
+		match parse_line(&mut reader, line, parsed_data, line_number) {
+			Ok(pd) => parsed_data = pd,
+			Err(e) => Err(e, line_number)
 		}
 	}
 
@@ -63,17 +42,17 @@ pub(super) fn pass1<R: BufRead>(mut reader: R) -> AsmResult<ParsedData> {
 }
 
 fn read_line<R: BufRead>(reader: &mut R) -> AsmResult<Option<String>> {
-		let mut line = String::new();
-		let bytes = reader
-		.read_line(&mut line)
-		.map_err(|_| AsmError::IOError)?;
+	let mut line = String::new();
+	let bytes = reader
+	.read_line(&mut line)
+	.map_err(|_| AsmError::IOError)?;
 
-		if bytes == 0 {
-			Ok(None) // EOF reached
-		}
-		else {
-			Ok(Some(format_line(line)))
-		}
+	if bytes == 0 {
+		Ok(None) // EOF reached
+	}
+	else {
+		Ok(Some(format_line(line)))
+	}
 }
 
 fn format_line(line: String) -> String {
@@ -86,6 +65,40 @@ fn format_line(line: String) -> String {
 		.collect::<String>();
 
 	wtf
+}
+
+fn parse_line<R: BufRead>(reader: &mut R, line: String, mut parsed_data: ParsedData,
+line_number: usize) -> AsmResult<ParsedData> {
+	let (label, rest) = split_at_label(line);
+	add_label(label, &mut parsed_data.symtab)?;
+
+	if rest.is_empty() {
+		return parsed_data;
+	}
+	else if rest.chars()
+		.skip_while(|c| *c == ' ')
+		.collect::<String>()
+		.starts_with("*=")
+		{
+		let (_, mut pc) = split_at_first(&rest, '=');
+		pc.remove(0); //remove '=' character
+		let pc_evaluated = parse_number(&pc)?;
+		parsed_data.symtab.location_counter = pc_evaluated;
+		parsed_data.data.push((line_number,
+			Data::Pragma(Pragma::LocationCounter(pc_evaluated))));
+	}
+	else if rest.contains("=") {
+		add_label_from_assignment(&rest, &mut parsed_data.symtab)?;
+	}
+	else {
+		let stop = insert_data(rest, &mut parsed_data, line_number)?;
+		if stop {
+			let buf = reader.fill_buf().unwrap();
+			reader.consume(buf.len());
+		}
+	}
+
+	Ok(parsed_data)
 }
 
 fn add_label(label: Option<String>, symtab: &mut SymTab) -> AsmResult<()> {
@@ -113,7 +126,7 @@ fn insert_data(s: String, parsed_data: &mut ParsedData, line_number: usize) -> A
 	}
 
 	let increment = evalute_increment(&data);
-	parsed_data.data.insert(line_number, data);
+	parsed_data.data.push((line_number, data));
 	parsed_data.symtab.increment_counter(increment);
 
 	Ok(false)
@@ -359,7 +372,7 @@ fn parse_label(s: &str) -> AsmResult<String> {
 
 		// no keywords
 		if parse_opcode(&label).is_ok() {
-			Err(AsmError::InvalidLabelName)
+			Err(AsmError::InvalidLabelNameOpcode)
 		}
 		else {
 			Ok(label)

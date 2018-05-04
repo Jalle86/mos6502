@@ -3,9 +3,11 @@ use std::io::{Write, Cursor};
 
 type MemCursor = Cursor<Box<[u8]>>;
 
-pub(super) fn pass2(cursor: &mut MemCursor, parsed_data: ParsedData) -> AsmResult<()> {
+pub(super) fn pass2(cursor: &mut MemCursor, parsed_data: ParsedData)
+-> DetailResult<()> {
 	for (line_number, data) in parsed_data.data {
-		write_data(cursor, data, &parsed_data.symtab)?;
+		write_data(cursor, data, &parsed_data.symtab)
+			.map_err(|e| Err((e, line_number)))?;
 	}
 
 	Ok(())
