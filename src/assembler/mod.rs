@@ -174,7 +174,7 @@ impl Instruction {
 pub fn assemble<R: BufRead>(source: R) -> Result<Box<[u8]>, String> {
 	let parsed_data = match pass1::pass1(source) {
 		Ok(pd) => pd,
-		Err(e, n) => return error_handler::write_error(e, n),
+		Err((e, n)) => return Err(error_handler::write_error(e, n)),
 	};
 
 	let buf : Box<[u8]> = Box::new([0; MEM_SIZE]);
@@ -182,6 +182,6 @@ pub fn assemble<R: BufRead>(source: R) -> Result<Box<[u8]>, String> {
 
 	match pass2::pass2(&mut cursor, parsed_data) {
 		Ok(()) => Ok(cursor.into_inner()),
-		Err(e) => Err(format!("{:?}", e)),
+		Err((e, n)) => return Err(error_handler::write_error(e, n)),
 	}
 }

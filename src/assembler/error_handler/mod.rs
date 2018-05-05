@@ -1,6 +1,6 @@
 use super::*;
 
-pub fn write_error(error: AsmError, line: usize) -> String {
+pub(super) fn write_error(error: AsmError, line: usize) -> String {
     format!("Error on line {}: {}.", line.to_string(), error_to_string(error))
 }
 

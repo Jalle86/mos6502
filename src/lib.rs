@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-mod mos6502;
+pub mod emu6502;
 pub mod assembler;
 mod asm_test;
 

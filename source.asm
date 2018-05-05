@@ -1,5 +1,5 @@
 	*=$0002
-	LDX #0
+	LDO #0
 Label1:	TXA
 	STA $0400,X
 	LDA #1

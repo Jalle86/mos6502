@@ -23,7 +23,7 @@ pub(super) fn pass1<R: BufRead>(mut reader: R) -> DetailResult<ParsedData> {
 		line_number += 1;
 
 		let line = match read_line(&mut reader) {
-			Err(e) => return Err(e, line_number),
+			Err(e) => return Err((e, line_number)),
 			Ok(None) => break,
 			Ok(Some(line)) => line,
 		};
@@ -32,10 +32,8 @@ pub(super) fn pass1<R: BufRead>(mut reader: R) -> DetailResult<ParsedData> {
 			continue;
 		}
 
-		match parse_line(&mut reader, line, parsed_data, line_number) {
-			Ok(pd) => parsed_data = pd,
-			Err(e) => Err(e, line_number)
-		}
+		parsed_data = parse_line(&mut reader, line, parsed_data, line_number)
+			.map_err(|e| (e, line_number))?;
 	}
 
 	Ok(parsed_data)
@@ -73,7 +71,7 @@ line_number: usize) -> AsmResult<ParsedData> {
 	add_label(label, &mut parsed_data.symtab)?;
 
 	if rest.is_empty() {
-		return parsed_data;
+		return Ok(parsed_data);
 	}
 	else if rest.chars()
 		.skip_while(|c| *c == ' ')
@@ -93,8 +91,8 @@ line_number: usize) -> AsmResult<ParsedData> {
 	else {
 		let stop = insert_data(rest, &mut parsed_data, line_number)?;
 		if stop {
-			let buf = reader.fill_buf().unwrap();
-			reader.consume(buf.len());
+			let buf = reader.fill_buf().unwrap().len();
+			reader.consume(buf);
 		}
 	}
 

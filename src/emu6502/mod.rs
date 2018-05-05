@@ -8,7 +8,7 @@ macro_rules! addr_mode_panic {
 type FlagArray = [bool; 7];
 
 #[allow(dead_code)]
-struct Mos6502 {
+pub struct Mos6502 {
     mem     : [u8; 65536],
     acc     : u8,
     x       : u8,

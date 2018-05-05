@@ -24,7 +24,10 @@ fn main() {
 
         let output = match assembler::assemble(cursor) {
             Ok(buf) => buf,
-            Err(e) => panic!("{}", e),
+            Err(e) => {
+				println!("{}", e);
+				return;
+			},
         };
 
         print_hex_dump(remove_trailing_zeroes(&output), 20);
