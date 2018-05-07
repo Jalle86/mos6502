@@ -9,13 +9,13 @@ type FlagArray = [bool; 7];
 
 #[allow(dead_code)]
 pub struct Mos6502 {
-    mem     : [u8; 65536],
-    acc     : u8,
-    x       : u8,
-    y       : u8,
-    flags   : FlagArray,
-    sp      : u8,
-    pc      : u16,
+    pub mem     : [u8; 65536],
+    pub acc     : u8,
+    pub x       : u8,
+    pub y       : u8,
+    pub flags   : FlagArray,
+    pub sp      : u8,
+    pub pc      : u16,
 }
 
 #[allow(dead_code)]
@@ -98,9 +98,13 @@ fn is_overflowing(n: u8, m: u8) -> bool {
 
 #[allow(dead_code)]
 impl Mos6502 {
-	fn new() -> Mos6502 {
+	pub fn new() -> Mos6502 {
+		Self::new_with_memory([0; 65536])
+	}
+
+	pub fn new_with_memory(mem: [u8; 65536]) -> Mos6502 {
 		Mos6502 {
-			mem: [0; 65536],
+			mem: mem,
 			acc: 0,
 			x: 0,
 			y: 0,
@@ -108,6 +112,21 @@ impl Mos6502 {
 			sp: 0xFF,
 			pc: 0,
 		}
+	}
+
+	pub fn reset(&mut self) {
+		self.pc = self.read16(0xFFFC);
+	}
+
+	pub fn step(&mut self) {
+		let pc = self.pc;
+		let addr_mode = self.get_addr_mode(pc);
+
+		let op = self.mem[pc as usize];
+		let instr = self.get_instruction(op);
+		self.pc += self.get_instr_len(op);
+
+		instr(self, addr_mode);
 	}
 
 	fn get_flag(&self, flag: Flag) -> bool {
@@ -121,34 +140,16 @@ impl Mos6502 {
 	fn set_flag_array(&self, flags :u8) -> [bool; 7] {
 		Flag::to_flag_array(flags)
 	}
-
-	fn reset(&mut self) {
-		self.pc = self.read16(0xFFFC);
-	}
-
-	fn step(&mut self) {
-		let pc = self.pc;
-		let addr_mode = self.get_addr_mode(pc);
-		let instr = self.get_instruction(pc);
-		let foo = self.mem[pc as usize];
-		self.pc += self.get_instr_len(foo);
-
-		instr(self, addr_mode);
-	}
-
-	fn get_instruction(&self, opcode: u16) -> fn(&mut Mos6502, AddrMode) {
+	
+	fn get_instruction(&self, opcode: u8) -> fn(&mut Mos6502, AddrMode) {
 		match opcode {
-			0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71
-			=> Mos6502::adc,
+			0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => Mos6502::adc,
 
-			0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31
-			=> Mos6502::and,
+			0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => Mos6502::and,
 
-			0x0A | 0x06 | 0x16 | 0x0E | 0x1E
-			=> Mos6502::asl,
+			0x0A | 0x06 | 0x16 | 0x0E | 0x1E => Mos6502::asl,
 
-			0x24 | 0x2C
-			=> Mos6502::bit,
+			0x24 | 0x2C => Mos6502::bit,
 
 			0x00 => Mos6502::brk,
 			0x10 => Mos6502::bpl,
@@ -160,20 +161,15 @@ impl Mos6502 {
 			0xD0 => Mos6502::bne,
 			0xF0 => Mos6502::beq,
 
-			0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1
-			=> Mos6502::cmp,
+			0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => Mos6502::cmp,
 
-			0xE0 | 0xE4 | 0xEC
-			=> Mos6502::cpx,
+			0xE0 | 0xE4 | 0xEC => Mos6502::cpx,
 
-			0xC0 | 0xC4 | 0xCC
-			=> Mos6502::cpy,
+			0xC0 | 0xC4 | 0xCC => Mos6502::cpy,
 
-			0xC6 | 0xD6 | 0xCE | 0xDE
-			=> Mos6502::dec,
+			0xC6 | 0xD6 | 0xCE | 0xDE => Mos6502::dec,
 
-			0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51
-			=> Mos6502::eor,
+			0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => Mos6502::eor,
 
 			0x18 => Mos6502::clc,
 			0x38 => Mos6502::sec,
@@ -183,30 +179,23 @@ impl Mos6502 {
 			//0xD8 => Mos6502::cld,
 			//0xF8 => Mos6502::sed,
 
-			0xE6 | 0xF6 | 0xEE | 0xFE
-			=> Mos6502::inc,
+			0xE6 | 0xF6 | 0xEE | 0xFE => Mos6502::inc,
 
-			0x4C | 0x6C
-			=> Mos6502::jmp,
+			0x4C | 0x6C => Mos6502::jmp,
 
 			0x20 => Mos6502::jsr,
 
-			0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0x89 | 0xA1 | 0xB1
-			=> Mos6502::lda,
+			0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0x89 | 0xA1 | 0xB1 => Mos6502::lda,
 
-			0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE
-			=> Mos6502::ldx,
+			0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => Mos6502::ldx,
 
-			0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC
-			=> Mos6502::ldy,
+			0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC => Mos6502::ldy,
 
-			0x4A | 0x46 | 0x56 | 0x4E | 0x5E
-			=> Mos6502::lsr,
+			0x4A | 0x46 | 0x56 | 0x4E | 0x5E => Mos6502::lsr,
 
 			0xEA => Mos6502::nop,
 
-			0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11
-			=> Mos6502::ora,
+			0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11 => Mos6502::ora,
 
 			0xAA => Mos6502::tax,
 			0x8A => Mos6502::txa,
@@ -217,20 +206,16 @@ impl Mos6502 {
 			0x88 => Mos6502::dey,
 			0xC8 => Mos6502::iny,
 
-			0x2A | 0x26 | 0x36 | 0x2E | 0x3E
-			=> Mos6502::rol,
+			0x2A | 0x26 | 0x36 | 0x2E | 0x3E => Mos6502::rol,
 
-			0x6A | 0x66 | 0x76 | 0x6E | 0x7E
-			=> Mos6502::ror,
+			0x6A | 0x66 | 0x76 | 0x6E | 0x7E => Mos6502::ror,
 
 			0x40 => Mos6502::rti,
 			0x60 => Mos6502::rts,
 
-			0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1
-			=> Mos6502::sbc,
+			0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 => Mos6502::sbc,
 
-			0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91
-			=> Mos6502::sta,
+			0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91 => Mos6502::sta,
 
 			0x9A => Mos6502::txs,
 			0xBA => Mos6502::tsx,
@@ -239,11 +224,9 @@ impl Mos6502 {
 			0x08 => Mos6502::php,
 			0x28 => Mos6502::plp,
 
-			0x86 | 0x96 | 0x8E
-			=> Mos6502::stx,
+			0x86 | 0x96 | 0x8E => Mos6502::stx,
 
-			0x84 | 0x94 | 0x8C
-			=> Mos6502::sty,
+			0x84 | 0x94 | 0x8C => Mos6502::sty,
 
 			_ => panic!(format!("Invalid opcode: {}", opcode)),
 		}
@@ -1014,8 +997,4 @@ fn test_dec_overflow() {
 	let mut m = Mos6502::new();
 	m.dec(Absolute(0));
 	assert_eq!(m.mem[0], 255);
-}
-
-#[test]
-fn test_all_the_shit() {
 }

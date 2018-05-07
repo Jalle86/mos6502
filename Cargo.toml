@@ -9,3 +9,7 @@ regex = "0.2"
 [[bin]]
 name = "asm6502"
 path = "src/assembler/bin.rs"
+
+[[bin]]
+name = "dbg6502"
+path = "src/emu6502/bin.rs"
