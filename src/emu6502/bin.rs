@@ -1,7 +1,8 @@
 extern crate mos6502;
 
 use std::env;
-use std::io::*;
+use std::str::SplitWhitespace;
+use std::io::{stdin, stdout, Write};
 use mos6502::emu6502::*;
 use std::fs::File;
 
@@ -14,18 +15,23 @@ type DbgResult = Result<(), DbgError>;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if args.len() < 1 {
+        panic!();
+    }
     let bin_path = &args[1];
     let mut bin_file = File::open(bin_path).expect("File not found");
     let mut mem : [u8; 65536] = [0; 65536];
     bin_file.write_all(&mut mem);
 
-    let mos = Mos6502::new_with_memory(mem);
+    let mut mos = Mos6502::new_with_memory(mem);
 
     loop {
         print!("> ");
         stdout().flush().unwrap();
 
-        evaluate_input(&read_input());
+        if let Err(_) = evaluate_input(&read_input(), &mut mos) {
+            panic!("MUERTE");
+        };
 
         print_state(&mos);
     }
@@ -39,22 +45,32 @@ fn read_input() -> String {
     }
 }
 
-fn evaluate_input(input: &str) -> DbgResult {
-    let split_whitespace = input.split_whitespace();
+fn evaluate_input(input: &str, mos: &mut Mos6502) -> DbgResult {
+    let mut split_whitespace = input.split_whitespace();
 
     if let Some(cmd) = split_whitespace.next() {
-        match cmd {
-            "step" => step(split_whitespace),
+        return match cmd {
+            "step" => step(&mut split_whitespace, mos),
+            _ => panic!(),
         }
     }
 
     Ok(())
 }
 
-fn step(iter: SplitWhitespace) -> DbgResult {
+fn step(iter: &mut SplitWhitespace, mos: &mut Mos6502) -> DbgResult {
     if let Some(num) = iter.next() {
+        println!("{}", num);
         let n = num.parse::<usize>().map_err(|_| DbgError::NotANumber)?;
+        for _ in 0..n {
+            mos.step();
+        }
     }
+    else {
+        mos.step();
+    }
+
+    Ok(())
 }
 
 fn read_char(c: char) -> Option<char> {

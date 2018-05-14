@@ -921,7 +921,7 @@ impl Mos6502 {
 	}
 
 	fn push(&mut self, val: u8) {
-		self.mem[0x0100 + self.sp as usize] = val - 1;
+		self.mem[0x0100 + self.sp as usize] = u8::wrapping_sub(val, 1);
 		self.sp = self.sp.overflowing_sub(1).0;
 	}
 

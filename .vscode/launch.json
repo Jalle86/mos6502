@@ -9,8 +9,8 @@
             "type": "lldb",
             "request": "launch",
             "name": "RustDebug",
-            "program": "${workspaceFolder}/target/debug/asm6502",
-            "args": ["test_sources/loop.asm", "target.trgt"],
+            "program": "${workspaceFolder}/target/debug/dbg6502",
+            "args": ["target.tt", "target.trgt"],
             "cwd": "${workspaceFolder}"
         }
     ]
