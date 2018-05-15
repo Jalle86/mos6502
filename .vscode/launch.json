@@ -10,8 +10,9 @@
             "request": "launch",
             "name": "RustDebug",
             "program": "${workspaceFolder}/target/debug/dbg6502",
-            "args": ["target.tt", "target.trgt"],
-            "cwd": "${workspaceFolder}"
+            "args": ["first.bin"],
+            "cwd": "${workspaceFolder}",
+            "terminal": "external"
         }
     ]
 }

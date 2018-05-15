@@ -21,7 +21,8 @@ fn main() {
     let bin_path = &args[1];
     let mut bin_file = File::open(bin_path).expect("File not found");
     let mut mem : [u8; 65536] = [0; 65536];
-    bin_file.write_all(&mut mem);
+    println!("{} bytes", bin_file.write(&mut mem).expect("WTF"));
+    bin_file.flush().expect("hej");
 
     let mut mos = Mos6502::new_with_memory(mem);
 
