@@ -2,7 +2,7 @@ extern crate mos6502;
 
 use std::env;
 use std::str::SplitWhitespace;
-use std::io::{stdin, stdout, Write};
+use std::io::{stdin, stdout, Read, Write};
 use mos6502::emu6502::*;
 use std::fs::File;
 
@@ -21,8 +21,7 @@ fn main() {
     let bin_path = &args[1];
     let mut bin_file = File::open(bin_path).expect("File not found");
     let mut mem : [u8; 65536] = [0; 65536];
-    println!("{} bytes", bin_file.write(&mut mem).expect("WTF"));
-    bin_file.flush().expect("hej");
+    println!("{} bytes", bin_file.read(&mut mem).expect("WTF"));
 
     let mut mos = Mos6502::new_with_memory(mem);
 

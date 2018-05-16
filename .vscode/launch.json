@@ -10,9 +10,12 @@
             "request": "launch",
             "name": "RustDebug",
             "program": "${workspaceFolder}/target/debug/dbg6502",
-            "args": ["first.bin"],
+            "args": ["first.wtf"],
             "cwd": "${workspaceFolder}",
-            "terminal": "external"
+            "terminal": "external",
+            "initCommands": [
+                "cargo build"
+            ]
         }
     ]
 }
