@@ -51,6 +51,11 @@ fn evaluate_input(input: &str, mos: &mut Mos6502) -> DbgResult {
     if let Some(cmd) = split_whitespace.next() {
         return match cmd {
             "step" => step(&mut split_whitespace, mos),
+            "reset" => {
+                mos.reset();
+                Ok(())
+            },
+            "quit" => std::process::exit(0),
             _ => panic!(),
         }
     }
